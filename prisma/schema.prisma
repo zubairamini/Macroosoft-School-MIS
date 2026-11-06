@@ -1,0 +1,501 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// مکتب‌یار (MaktabYar) — School Management Information System for Afghanistan
+// Prisma schema — Phase 1 (vertical slice)
+//
+// PORTABILITY NOTE (PostgreSQL migration path):
+//   This sandbox runs SQLite. Production targets PostgreSQL. Because SQLite
+//   has no native enums, enum-like fields are String columns validated by
+//   zod schemas at the application boundary (src/server/*/dto.ts). Allowed
+//   values are documented per field. On PostgreSQL these become enums.
+//
+// DATE/TIME INVARIANTS:
+//   - Instants (login, audit, created/updated) → DateTime, stored UTC.
+//   - Date-only values (birth dates, attendance dates, enrollment dates,
+//     academic-year boundaries) → String "YYYY-MM-DD" (ISO date-only).
+//     No time component ⇒ no timezone shift can alter birthdays. Convert to
+//     `date` column type on PostgreSQL.
+//
+// MONEY INVARIANT (Phase 3 modules will rely on it):
+//   - All monetary amounts are integers in minor units (diram; 100 diram = 1
+//     AFN). Binary floating point is never used for money.
+//
+// CONCURRENCY INVARIANTS:
+//   - Optimistic concurrency via `version Int` on editable aggregates
+//     (Application, Student, Organization). Bumping is done in transactions.
+//   - Scarce/monetary resources (Phase 3: invoices, payments, book copies)
+//     will additionally use transactions + row-level checks.
+//
+// HISTORICAL RECORD INVARIANT:
+//   - No soft deletes on financial or academic history. Corrections are new
+//     records (reversals / corrections) that reference the original.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Organization & structure ────────────────────────────────────────────────
+
+model Organization {
+  id            String   @id @default(cuid())
+  // Configurable product + school identity
+  productName   String   @default("مکتب‌یار")
+  name          String   @default("")
+  // "public" | "private" (school configuration, affects fee modules)
+  schoolType    String   @default("private")
+  province      String?
+  district      String?
+  address       String?
+  phone         String?
+  email         String?
+  // EMIS / registration identifiers — optional, school-supplied
+  emisCode      String?
+  registrationNumber String?
+  logoUrl       String?
+  ministryLogoUrl    String? // replaceable placeholder asset until supplied
+  // Report heading lines above school name (province/district education dir.)
+  reportHeading String?
+  reportFooter  String?
+  // Quick flag: has the first-run setup wizard been completed?
+  isConfigured  Boolean  @default(false)
+  version       Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  branches      Branch[]
+  academicYears AcademicYear[]
+  gradeLevels   GradeLevel[]
+  shifts        Shift[]
+  subjects      Subject[]
+  applications  Application[]
+  students      Student[]
+  guardians     Guardian[]
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  name      String
+  code      String
+  province  String?
+  district  String?
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rooms          Room[]
+  classSections  ClassSection[]
+  userRoles      UserRole[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+}
+
+model AcademicYear {
+  id         String   @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id])
+  // Afghan convention: Solar Hijri year label, e.g. "۱۴۰۵" / "1405"
+  name       String
+  startDate  String // date-only ISO "YYYY-MM-DD"
+  endDate    String
+  isCurrent  Boolean  @default(false)
+  // "planned" | "active" | "closed"
+  status     String   @default("planned")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  terms          Term[]
+  classSections  ClassSection[]
+  applications   Application[]
+  enrollments    Enrollment[]
+
+  @@unique([orgId, name])
+  @@index([orgId, isCurrent])
+}
+
+model Term {
+  id             String   @id @default(cuid())
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  name           String // e.g. "نیم‌سال اول"
+  index          Int
+  startDate      String
+  endDate        String
+  createdAt      DateTime @default(now())
+
+  @@unique([academicYearId, index])
+}
+
+model GradeLevel {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  level     Int // 1..12
+  nameDari  String // "صنف اول" ... "صنف دوازدهم"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  classSections ClassSection[]
+  applications  Application[]
+  enrollments   Enrollment[]
+
+  @@unique([orgId, level])
+}
+
+model Shift {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  // e.g. "صبح" | "چاشت" | "عصر"
+  name      String
+  startTime String // "07:00"
+  endTime   String // "12:00"
+  createdAt DateTime @default(now())
+
+  classSections ClassSection[]
+
+  @@unique([orgId, name])
+}
+
+model Room {
+  id        String   @id @default(cuid())
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  name      String
+  capacity  Int      @default(30)
+  createdAt DateTime @default(now())
+
+  @@unique([branchId, name])
+}
+
+model Subject {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  nameDari  String // "دری", "ریاضی", ...
+  code      String
+  // Grades where the subject is taught: [1,2,3...] (informational in Phase 1)
+  grades    String   @default("[]") // JSON int array
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, code])
+}
+
+model ClassSection {
+  id             String   @id @default(cuid())
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  gradeLevelId   String
+  gradeLevel     GradeLevel @relation(fields: [gradeLevelId], references: [id])
+  branchId       String
+  branch         Branch     @relation(fields: [branchId], references: [id])
+  shiftId        String?
+  shift          Shift?     @relation(fields: [shiftId], references: [id])
+  roomName       String?
+  capacity       Int      @default(35)
+  // Section label: "الف", "ب", "A", "B" — clearly distinct from Branch (شعبهٔ مکتب)
+  label          String
+  // "planned" | "active" | "closed"
+  status         String   @default("active")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  enrollments Enrollment[]
+
+  @@unique([academicYearId, gradeLevelId, label])
+  @@index([branchId])
+  @@index([academicYearId])
+}
+
+// ── Users, roles, sessions ──────────────────────────────────────────────────
+
+model User {
+  id               String    @id @default(cuid())
+  username         String    @unique
+  // scrypt hash: "scrypt:N:r:p:salt_b64:hash_b64" — never log this column
+  passwordHash     String
+  fullName         String
+  phone            String?   // normalized Latin digits, +93...
+  email            String?
+  isActive         Boolean   @default(true)
+  mustChangePassword Boolean @default(false)
+  lastLoginAt      DateTime?
+  // Links a parent/guardian portal account to its Guardian record
+  guardianId       String?
+  guardian         Guardian? @relation(fields: [guardianId], references: [id])
+  // Links staff portal account to its employee record (Phase: HR)
+  employeeId       String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  sessions    Session[]
+  userRoles   UserRole[]
+  auditEvents AuditEvent[]
+  notifications Notification[]
+
+  @@index([guardianId])
+}
+
+model UserRole {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  // System role key ("admin", "registrar", ...) or custom role key
+  roleKey        String
+  // Scope parameters (narrowing). Null = all branches / all years.
+  branchId       String?
+  branch         Branch?  @relation(fields: [branchId], references: [id])
+  academicYearId String?
+  // JSON string array of ClassSection ids — used by section-scoped grants
+  sectionIds     String   @default("[]")
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Session {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  // SHA-256 of the opaque cookie token — the raw token never lives in DB
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  revokedAt  DateTime?
+  ip         String?
+  userAgent  String?
+
+  @@index([userId])
+}
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  username  String
+  ip        String
+  success   Boolean
+  at        DateTime @default(now())
+
+  @@index([username, ip, at])
+}
+
+// Application settings (module toggles, numbering, policy placeholders).
+// Versioned business rules (grading policies, fee policies) will get their
+// own versioned tables in later phases — never hardcoded as "Ministry rules".
+model Setting {
+  key       String   @id
+  value     String   @default("{}") // JSON
+  updatedAt DateTime @updatedAt
+}
+
+// Monotonic counters for document numbering (student, applicant, receipt…)
+model Counter {
+  key   String @id
+  value Int    @default(0)
+}
+
+// ── Admissions & student lifecycle ──────────────────────────────────────────
+
+model Application {
+  id             String   @id @default(cuid())
+  orgId          String
+  org            Organization @relation(fields: [orgId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  branchId       String?
+  // Sequential applicant number, e.g. "A-1405-0007"
+  applicantNumber String  @unique
+  // Applicant personal data (Dari names preserved as entered):
+  // { firstName, fatherName, grandfatherName, gender, birthDate (ISO date-only),
+  //   birthPlace, phone?, address?, previousSchool?, previousGrade?,
+  //   healthNotes? (restricted), photoUrl? }
+  personal       String   @default("{}") // JSON
+  requestedGradeId String?
+  gradeLevel     GradeLevel? @relation(fields: [requestedGradeId], references: [id])
+  requestedSectionId String?
+  requestedShiftId   String?
+  // Guardian info captured during admission:
+  // [{ fullName, relationship, phone, phone2?, occupation?, address?, isPrimary, contactRights, portalAccess }]
+  guardians      String   @default("[]") // JSON array
+  // Document checklist: [{ type, title, provided, fileUrl? }]
+  documents      String   @default("[]") // JSON array
+  // "draft" | "submitted" | "under_review" | "approved" | "rejected" | "enrolled" | "cancelled"
+  status         String   @default("draft")
+  decisionNote   String?
+  submittedAt    DateTime?
+  reviewedById   String?
+  reviewedAt     DateTime?
+  decidedById    String?
+  decidedAt      DateTime?
+  enrolledAt     DateTime?
+  version        Int      @default(1)
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  student        Student?
+
+  @@index([orgId, status])
+  @@index([academicYearId, status])
+}
+
+model Guardian {
+  id          String   @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  fullName    String
+  // "father" | "mother" | "uncle" | "other" — stored as entered relationship label
+  relationship String
+  phone       String?
+  phone2      String?
+  email       String?
+  occupation  String?
+  address     String?
+  // Explicit decisions about contact rights and portal access
+  canPickUp   Boolean  @default(false)
+  portalAccess Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  students     StudentGuardian[]
+  portalUsers  User[]
+}
+
+model Student {
+  id            String   @id @default(cuid())
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  applicationId String?  @unique
+  application   Application? @relation(fields: [applicationId], references: [id])
+  // Sequential student number, e.g. "S-1405-0001"
+  studentNumber String   @unique
+  // Personal data JSON (same shape as Application.personal)
+  personal      String   @default("{}") // JSON
+  // "active" | "inactive" | "transferred" | "withdrawn" | "graduated"
+  status        String   @default("active")
+  statusNote    String?
+  photoUrl      String?
+  version       Int      @default(1)
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  enrollments Enrollment[] @relation("Enrollments")
+  guardians   StudentGuardian[]
+  documents   StudentDocument[]
+
+  @@index([orgId, status])
+}
+
+model StudentGuardian {
+  id           String   @id @default(cuid())
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id])
+  guardianId   String
+  guardian     Guardian @relation(fields: [guardianId], references: [id])
+  relationship String
+  isPrimary    Boolean  @default(false)
+  // Explicit contact/portal rights per child
+  contactRights Boolean @default(true)
+  createdAt     DateTime @default(now())
+
+  @@unique([studentId, guardianId])
+}
+
+model Enrollment {
+  id              String   @id @default(cuid())
+  studentId       String
+  student         Student  @relation("Enrollments", fields: [studentId], references: [id])
+  academicYearId  String
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
+  gradeLevelId    String
+  gradeLevel      GradeLevel @relation(fields: [gradeLevelId], references: [id])
+  classSectionId  String?
+  classSection    ClassSection? @relation(fields: [classSectionId], references: [id])
+  rollNumber      Int?
+  // date-only ISO — the official enrollment date (no timezone shift)
+  enrolledOn      String
+  // "active" | "promoted" | "repeated" | "transferred" | "withdrawn" | "graduated"
+  status          String   @default("active")
+  statusNote      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // INVARIANT: one enrollment per student per academic year
+  @@unique([studentId, academicYearId])
+  @@index([academicYearId, gradeLevelId])
+}
+
+model StudentDocument {
+  id           String   @id @default(cuid())
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id])
+  // "tazkira" | "photo" | "previous_certificate" | "medical" | "other"
+  type         String
+  title        String
+  fileUrl      String?  // private object storage key (Phase 4: signed access)
+  isVerified   Boolean  @default(false)
+  uploadedById String?
+  uploadedAt   DateTime @default(now())
+
+  @@index([studentId])
+}
+
+// ── Audit & reliability ─────────────────────────────────────────────────────
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  actorName  String
+  action     String   // e.g. "application.enroll"
+  entity     String   // e.g. "Application"
+  entityId   String
+  // JSON before/after diffs — never contains passwords or tokens
+  before     String?  // JSON
+  after      String?  // JSON
+  reason     String?
+  ip         String?
+  at         DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([at])
+}
+
+// Transactional outbox: committed transactions reliably trigger background
+// work (notifications, exports, imports). A worker drains this table.
+model OutboxEvent {
+  id          String    @id @default(cuid())
+  type        String    // e.g. "student.enrolled"
+  payload     String    @default("{}") // JSON
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+  error       String?
+
+  @@index([processedAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String   // "application.submitted" | "student.enrolled" | ...
+  title     String
+  body      String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+}
