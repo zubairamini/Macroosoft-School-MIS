@@ -3,14 +3,16 @@
 نظام مدیریت معلومات مکتب برای افغانستان — به زبان دری، کاملاً راست‌چین، با تقویم
 شمسی افغانی، ارقام فارسی و اجازه‌های دقیق نقش‌محور.
 
-> **وضعیت:** مرحلهٔ اول، دوم و سوم (Phases 1–3) از پنج مرحلهٔ توسعه تکمیل و
-> آزمایش شده است — مرحلهٔ اول: ورود امن ← تنظیم مکتب ← شمولیت ← پروفایل شاگرد؛
+> **وضعیت:** **هر پنج مرحلهٔ توسعه (Phases 1–5) تکمیل و آزمایش شده است** —
+> مرحلهٔ اول: ورود امن ← تنظیم مکتب ← شمولیت ← پروفایل شاگرد؛
 > مرحلهٔ دوم: کادر مکتب ← تخصیص تدریس ← برنامهٔ صنفی ← حاضری ← امتحانات و
 > نتایج ← کارت نتیجه؛ مرحلهٔ سوم: فیس‌ها ← فاکتورها ← رسیدهای پرداخت ← مصارف ←
-> معاشات ← گزارش‌های مالی — همراه با **تفکیک سخت‌گیرانهٔ داده‌ها بین شعبه‌ها**
-> (کاربر کارتهٔ نو داده‌های خوشحال خان را نمی‌بیند؛ فقط مدیر سیستم و مدیر عام
-> به همهٔ شعبه‌ها دسترسی دارند). جزئیات در
-> [KNOWN-LIMITATIONS.md](docs/KNOWN-LIMITATIONS.md).
+> معاشات ← گزارش‌های مالی؛ مرحلهٔ چهارم: کتابخانه ← اعلانات و پیام‌ها ←
+> کارت‌های شناسایی ← پورتال اولیا/شاگرد؛ مرحلهٔ پنجم: خدمات مکتب (ترانسپورت،
+> انبار، مهمان‌ها، رویدادها) ← گزارش‌ها و صدور CSV ← **سال‌گذرانی تکرار-امن** —
+> همراه با **تفکیک سخت‌گیرانهٔ داده‌ها بین شعبه‌ها** (کاربر کارتهٔ نو داده‌های
+> خوشحال خان را نمی‌بیند؛ فقط مدیر سیستم و مدیر عام به همهٔ شعبه‌ها دسترسی
+> دارند). جزئیات در [KNOWN-LIMITATIONS.md](docs/KNOWN-LIMITATIONS.md).
 
 ## Quick start (sandbox)
 
@@ -44,8 +46,8 @@ Demo logins (all fictional, synthetic data):
 ```bash
 bun run typecheck        # tsc --noEmit → clean
 bun run lint             # eslint → clean
-bun run test             # 63 unit tests (jalali, RBAC, phase-2/3 rules)
-bun run test:e2e         # 140 API integration tests against the dev server
+bun run test             # 99 unit tests (jalali, RBAC, phase-2..5 rules)
+bun run test:e2e         # 200 API integration tests against the dev server
 curl localhost:3000/api/v1/openapi   # OpenAPI 3.0 spec
 ```
 
@@ -58,7 +60,7 @@ Actual results are archived in [docs/TEST-RESULTS.md](docs/TEST-RESULTS.md).
   None+Secure behind HTTPS proxies/preview gateways), 12h sliding sessions,
   login rate limiting (5 failures / 15 min per username+IP), session
   revocation, audit trail.
-- **RBAC**: 13 default roles, 46 permissions × 6 scope kinds
+- **RBAC**: 13 default roles, 54 permissions × 6 scope kinds
   (`all / branch / year / section / own / guardian`), enforced server-side on
   every endpoint, search result, and export path. Hiding a menu is never
   authorization — the API re-checks.
@@ -93,12 +95,39 @@ Actual results are archived in [docs/TEST-RESULTS.md](docs/TEST-RESULTS.md).
   payroll runs (draft → approve → pay; paying books a «معاشات» expense
   automatically), finance reports (monthly KPIs, 6-month income vs expense,
   top debtors). Money is integer diram — never floats.
+- **Library (P4)**: catalog (title vs physical copy), bulk copy numbering,
+  loans with the one-active-loan-per-copy invariant (double checkout → 409),
+  overdue tracking, and **fines issued as linked finance invoices** — the
+  money lives in one module only.
+- **Announcements & messages (P4)**: branch/section-scoped announcements
+  (all/staff/guardians audiences), draft → publish gate, idempotent read
+  receipts; group SMS/email sends are RECORDED in a queued message log +
+  outbox (the gateway itself is a production integration point — nothing is
+  faked as sent).
+- **Guardian/student portal (P4)**: one aggregate view — children with
+  enrollment, attendance snapshot, published subject averages, outstanding
+  fee balance and the latest announcements.
+- **ID cards (P4)**: printable A4 sheet per class section (print CSS; photo
+  placeholders until the upload pipeline is wired).
+- **Services (P5)**: transport routes with transactional capacity checks;
+  inventory as an append-only movement ledger (negative stock impossible);
+  guest register with checkout; event calendar with org-wide + branch
+  events.
+- **Reports (P5)**: students registry, attendance (with «نا-ثبت»
+  conservation) and published results — screen preview, print sheet and
+  **CSV export with UTF-8 BOM**; scopes reuse the RBAC engine (teachers
+  auto-narrow to their sections).
+- **Year-end rollover (P5)**: preview → per-student decisions
+  (promote/repeat/graduate/leave) → apply. **Repeat-safe** (structural
+  enrollment uniqueness; re-running on a closed year is a no-op). Academic
+  closing never erases debt or closes financial periods. Only admin and
+  مدیر عام hold `year_end.manage`.
 - **Dari & RTL**: full interface in Afghan Dari, `dir="rtl" lang="fa-AF"`,
   self-hosted Vazirmatn, Afghan Solar-Hijri months (حمل…حوت), Asia/Kabul
   timezone for instants, date-only fields immune to timezone shifts,
   Persian/Arabic/Latin digit input, ی/ک search normalization, +93 phone
   normalization, LTR isolation for codes.
-- **REST API `/api/v1`** (44 endpoints) + OpenAPI 3.0 — the same contract a
+- **REST API `/api/v1`** (83 endpoints) + OpenAPI 3.0 — the same contract a
   future mobile app consumes. No business logic in Server Actions.
 - **Audit trail & outbox**: every mutation recorded with actor/action/entity/
   before/after/reason; transactional outbox fans out notifications.

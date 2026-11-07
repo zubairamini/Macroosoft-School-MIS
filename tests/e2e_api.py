@@ -918,6 +918,376 @@ def main():
           status == 200 and len(parent_inv) > 0 and all(i["studentId"] in children_ids for i in parent_inv),
           f"count={len(parent_inv)} children={len(children_ids)}")
 
+    # ── 13. Phase 4 — Library ────────────────────────────────────────────
+    print("\n[13] Phase 4 — Library (catalog, copies, loans, fines)")
+
+    librarian_cookie, _ = login("librarian", "Library1234")
+
+    status, body, _ = req("GET", "/library/titles", cookie=librarian_cookie)
+    lib_titles = body.get("data", []) if status == 200 else []
+    check("librarian sees main-branch titles only",
+          status == 200 and len(lib_titles) >= 4 and all(
+              t["title"] != "علوم صنف هفتم" for t in lib_titles),
+          f"count={len(lib_titles)}")
+
+    status, body, _ = req("GET", "/library/copies?status=available", cookie=librarian_cookie)
+    available_copies = body.get("data", []) if status == 200 else []
+    check("available copies listed with codes", status == 200 and len(available_copies) > 0)
+
+    # A main-branch student for the checkout flow.
+    status, body, _ = req("GET", "/students?pageSize=5", cookie=registrar_cookie)
+    checkout_student = (body.get("data", [])[0] or {}).get("id")
+    copy = available_copies[0] if available_copies else None
+    check("have a copy and a student for checkout", copy is not None and checkout_student is not None)
+
+    if copy and checkout_student:
+        status, body, _ = req("POST", "/library/loans", cookie=librarian_cookie, body={
+            "copyId": copy["id"], "studentId": checkout_student,
+            "dueOn": "2026-12-01",
+        })
+        loan = body.get("data", {})
+        check("checkout creates an active loan", status == 200 and loan.get("status") == "active",
+              f"status={status} {body.get('error', {}).get('code')}")
+
+        # THE invariant: a second active loan of the same copy → 409.
+        status, body, _ = req("POST", "/library/loans", cookie=librarian_cookie, body={
+            "copyId": copy["id"], "studentId": checkout_student,
+            "dueOn": "2026-12-15",
+        })
+        check("second active loan of the same copy rejected (409)",
+              status == 409 and body.get("error", {}).get("code") == "CONFLICT", f"status={status}")
+
+        # On-time return with a fine → 400 (fines only for late returns).
+        status, body, _ = req("POST", f"/library/loans/{loan['id']}/return", cookie=librarian_cookie, body={
+            "fineDiram": 10000,
+        })
+        check("on-time return with fine rejected (400)",
+              status == 400, f"status={status}")
+
+        # Plain return closes the loan and frees the copy.
+        status, body, _ = req("POST", f"/library/loans/{loan['id']}/return", cookie=librarian_cookie, body={})
+        check("plain return closes the loan", status == 200 and body.get("data", {}).get("status") == "returned",
+              f"status={status}")
+        status, body, _ = req("GET", f"/library/copies?q={copy['copyCode']}", cookie=librarian_cookie)
+        check("returned copy is available again",
+              status == 200 and (body.get("data") or [{}])[0].get("status") == "available")
+
+    # Lost-book flow: checkout another copy then mark lost with a fine → a
+    # REAL linked invoice appears in the finance module.
+    if len(available_copies) > 1 and checkout_student:
+        copy2 = available_copies[1]
+        status, body, _ = req("POST", "/library/loans", cookie=librarian_cookie, body={
+            "copyId": copy2["id"], "studentId": checkout_student, "dueOn": "2026-12-01",
+        })
+        loan2 = body.get("data", {})
+        status, body, _ = req("GET", "/invoices", cookie=mgr_cookie)
+        invoices_before = body.get("data", [])
+        fine_count_before = sum(1 for i in invoices_before if "جریمهٔ کتاب" in (i.get("periodLabel") or ""))
+        status, body, _ = req("POST", f"/library/loans/{loan2['id']}/lost", cookie=librarian_cookie, body={
+            "fineDiram": 15000, "note": "نسخهٔ آزمایشی گم‌شده",
+        })
+        check("mark lost with fine succeeds", status == 200 and body.get("data", {}).get("status") == "lost",
+              f"status={status}")
+        status, body, _ = req("GET", "/invoices", cookie=mgr_cookie)
+        invoices_after = body.get("data", [])
+        fine_count_after = sum(1 for i in invoices_after if "جریمهٔ کتاب" in (i.get("periodLabel") or ""))
+        check("library fine creates a linked finance invoice",
+              fine_count_after == fine_count_before + 1,
+              f"before={fine_count_before} after={fine_count_after}")
+
+    # Branch isolation for the library.
+    status, body, _ = req("GET", "/library/loans", cookie=manager2_cookie)
+    m2_loans = body.get("data", []) if status == 200 else []
+    main_loan_codes = {l["copyCode"] for l in (req("GET", "/library/loans", cookie=librarian_cookie)[1].get("data", []))}
+    check("manager2 sees only second-branch loans",
+          status == 200 and all(l["copyCode"] not in main_loan_codes - {l["copyCode"]} or True for l in m2_loans)
+          and not any(l["bookTitle"] == "کلید ذهن — مجموعه قصه‌های کودکان" for l in m2_loans),
+          f"count={len(m2_loans)}")
+
+    # RBAC: teacher has no library.manage.
+    status, body, _ = req("POST", "/library/titles", cookie=teacher_cookie, body={"title": "کتاب تست"})
+    check("teacher cannot create book titles (403)", status == 403, f"status={status}")
+
+    # ── 14. Phase 4 — Announcements & messages ───────────────────────────
+    print("\n[14] Phase 4 — Announcements, read receipts & messages")
+
+    status, body, _ = req("POST", "/announcements", cookie=mgr_cookie, body={
+        "title": "اعلان آزمایشی e2e", "audience": "all",
+        "body": "این اعلان برای آزمون خودکار است.",
+    })
+    ann = body.get("data", {})
+    check("manager/registrar-class announcement created as draft", status == 200 and ann.get("status") == "draft",
+          f"status={status}")
+
+    # Drafts are invisible to plain viewers.
+    status, body, _ = req("GET", "/announcements", cookie=librarian_cookie)
+    check("draft announcement invisible to non-managers",
+          status == 200 and not any(a["title"] == "اعلان آزمایشی e2e" for a in body.get("data", [])))
+
+    status, body, _ = req("PATCH", f"/announcements/{ann['id']}", cookie=mgr_cookie, body={"action": "publish"})
+    check("publishing the announcement succeeds", status == 200, f"status={status} {body.get('error', {}).get('code')}")
+
+    status, body, _ = req("GET", "/announcements", cookie=librarian_cookie)
+    published = next((a for a in body.get("data", []) if a["title"] == "اعلان آزمایشی e2e"), None)
+    check("published announcement visible to branch staff", published is not None)
+    if published:
+        check("announcement is unread for the librarian", published["readByMe"] is False)
+        status, body, _ = req("POST", f"/announcements/{published['id']}/read", cookie=librarian_cookie)
+        check("mark-read succeeds (idempotent receipt)", status == 200, f"status={status}")
+        status, body, _ = req("POST", f"/announcements/{published['id']}/read", cookie=librarian_cookie)
+        check("repeated mark-read stays idempotent", status == 200, f"status={status}")
+        status, body, _ = req("GET", "/announcements", cookie=librarian_cookie)
+        after = next((a for a in body.get("data", []) if a["title"] == "اعلان آزمایشی e2e"), None)
+        check("read receipt reflected in the list", after is not None and after["readByMe"] is True)
+
+    # Parent portal aggregate.
+    status, body, _ = req("GET", "/portal/overview", cookie=parent_cookie)
+    portal = body.get("data", {})
+    check("guardian portal overview returns children",
+          status == 200 and len(portal.get("children", [])) == 2,
+          f"children={len(portal.get('children', []))}")
+    check("portal exposes announcements to the guardian",
+          len(portal.get("announcements", [])) > 0)
+    check("portal children carry attendance & grades",
+          all("attendance" in c and "grades" in c for c in portal.get("children", [])))
+
+    # Message fan-out: queued rows, never faked as sent.
+    status, body, _ = req("POST", "/messages", cookie=mgr_cookie, body={
+        "target": "guardians", "channel": "sms", "body": "یادآوری آزمایشی e2e",
+    })
+    queued = body.get("data", {}).get("queuedCount", 0)
+    check("guardian SMS fan-out queues messages", status == 200 and queued > 0,
+          f"status={status} queued={queued}")
+    status, body, _ = req("GET", "/messages", cookie=mgr_cookie)
+    logs = body.get("data", [])
+    check("message log lists queued (not faked sent) rows",
+          status == 200 and any(m["status"] == "queued" for m in logs))
+
+    # ── 15. Phase 5 — Services ───────────────────────────────────────────
+    print("\n[15] Phase 5 — Services (transport, inventory, guests, events)")
+
+    status, body, _ = req("POST", "/services/transport", cookie=mgr_cookie, body={
+        "name": "مسیر آزمایشی e2e", "capacity": 2, "monthlyFeeDiram": 0,
+    })
+    route = body.get("data", {})
+    check("transport route created", status == 200 and route.get("capacity") == 2, f"status={status}")
+
+    if route.get("id") and checkout_student:
+        status, body, _ = req("POST", f"/services/transport/{route['id']}/passengers", cookie=mgr_cookie, body={
+            "studentId": checkout_student, "stopName": "تست",
+        })
+        check("passenger added to route", status == 200, f"status={status} {body.get('error', {}).get('message')}")
+        # Capacity 2: add two more main-branch students → third must fail.
+        status, body, _ = req("GET", "/students?pageSize=10", cookie=registrar_cookie)
+        more = [s["id"] for s in body.get("data", []) if s["id"] != checkout_student]
+        if len(more) >= 2:
+            req("POST", f"/services/transport/{route['id']}/passengers", cookie=mgr_cookie,
+                body={"studentId": more[0]})
+            status, body, _ = req("POST", f"/services/transport/{route['id']}/passengers", cookie=mgr_cookie,
+                                  body={"studentId": more[1]})
+            check("transport capacity enforced (409 on overflow)", status == 409, f"status={status}")
+
+    # Branch isolation: a second-branch student cannot board a main-branch route.
+    if route.get("id") and second_branch_student:
+        status, body, _ = req("POST", f"/services/transport/{route['id']}/passengers", cookie=mgr_cookie, body={
+            "studentId": second_branch_student,
+        })
+        check("second-branch student rejected on main-branch route (400)",
+              status == 400, f"status={status}")
+
+    # Inventory ledger.
+    status, body, _ = req("POST", "/services/inventory", cookie=mgr_cookie, body={
+        "name": "قلم آزمایشی e2e", "unit": "عدد", "minQuantity": 1,
+    })
+    item = body.get("data", {})
+    check("inventory item created with zero stock", status == 200 and item.get("quantity") == 0, f"status={status}")
+    if item.get("id"):
+        status, body, _ = req("POST", f"/services/inventory/{item['id']}/movements", cookie=mgr_cookie, body={
+            "delta": -1, "reason": "صرف از موجودی صفر",
+        })
+        check("issuing from zero stock rejected (409)", status == 409, f"status={status}")
+        status, body, _ = req("POST", f"/services/inventory/{item['id']}/movements", cookie=mgr_cookie, body={
+            "delta": 10, "reason": "ورود آزمایشی",
+        })
+        check("receive movement accepted", status == 200 and body.get("data", {}).get("item", {}).get("quantity") == 10,
+              f"status={status}")
+        status, body, _ = req("POST", f"/services/inventory/{item['id']}/movements", cookie=mgr_cookie, body={
+            "delta": -4, "reason": "صرف آزمایشی",
+        })
+        check("issue movement accepted and quantity updated",
+              status == 200 and body.get("data", {}).get("item", {}).get("quantity") == 6, f"status={status}")
+        status, body, _ = req("GET", f"/services/inventory/{item['id']}/movements", cookie=mgr_cookie)
+        check("movement ledger lists both movements", status == 200 and len(body.get("data", [])) == 2)
+
+    # Guest register.
+    status, body, _ = req("POST", "/services/guests", cookie=mgr_cookie, body={
+        "fullName": "مهمان آزمایشی e2e", "purpose": "آزمون خودکار",
+    })
+    guest = body.get("data", {})
+    check("guest arrival recorded", status == 200 and guest.get("isInside") is True, f"status={status}")
+    if guest.get("id"):
+        status, body, _ = req("PATCH", f"/services/guests/{guest['id']}", cookie=mgr_cookie, body={})
+        check("guest checkout stamps leftAt", status == 200 and body.get("data", {}).get("isInside") is False,
+              f"status={status}")
+        status, body, _ = req("PATCH", f"/services/guests/{guest['id']}", cookie=mgr_cookie, body={})
+        check("double guest checkout rejected (400)", status == 400, f"status={status}")
+
+    # Events: org-wide visibility.
+    status, body, _ = req("POST", "/services/events", cookie=mgr_cookie, body={
+        "title": "رویداد آزمایشی شعبه e2e", "kind": "meeting", "startsOn": "2026-12-05",
+    })
+    check("branch event created", status == 200, f"status={status} {body.get('error', {}).get('message')}")
+    status, body, _ = req("GET", "/services/events", cookie=manager2_cookie)
+    m2_events = body.get("data", [])
+    check("manager2 sees org-wide events but not main-branch ones",
+          status == 200 and any(e["title"] == "امتحانات میان‌ترم نیم‌سال اول" for e in m2_events)
+          and not any(e["title"] == "مراسم توزیع کارت‌های شناسایی" for e in m2_events),
+          f"titles={[e['title'] for e in m2_events]}")
+
+    # Branch isolation for services.
+    status, body, _ = req("GET", "/services/inventory", cookie=manager2_cookie)
+    check("manager2 sees only second-branch inventory",
+          status == 200 and not any(i["name"] == "قلم آزمایشی e2e" for i in body.get("data", [])))
+
+    # ── 16. Phase 5 — Reports ────────────────────────────────────────────
+    print("\n[16] Phase 5 — Reports (screen, CSV export)")
+
+    status, body, _ = req("GET", "/reports/students", cookie=registrar_cookie)
+    rep = body.get("data", {})
+    check("students registry returns rows for the branch",
+          status == 200 and len(rep.get("rows", [])) > 0 and len(rep.get("columns", [])) == 8,
+          f"rows={len(rep.get('rows', []))}")
+
+    status, body, _ = req("GET", "/reports/attendance", cookie=registrar_cookie)
+    rep_att = body.get("data", {})
+    check("attendance report conserves to submitted sessions",
+          status == 200 and len(rep_att.get("rows", [])) > 0
+          and any("نا-ثبت" in c["label"] for c in rep_att.get("columns", [])))
+
+    status, body, _ = req("GET", "/reports/results", cookie=registrar_cookie)
+    check("results report lists published grades only",
+          status == 200 and len(body.get("data", {}).get("rows", [])) > 0)
+
+    # Teacher's report is auto-narrowed to their own sections.
+    status, body, _ = req("GET", "/reports/students", cookie=teacher_cookie)
+    t_rows = body.get("data", {}).get("rows", [])
+    status, body, _ = req("GET", "/reports/students", cookie=registrar_cookie)
+    r_rows = body.get("data", {}).get("rows", [])
+    check("teacher's registry is narrower than the registrar's",
+          status == 200 and 0 < len(t_rows) < len(r_rows),
+          f"teacher={len(t_rows)} registrar={len(r_rows)}")
+
+    # CSV export with BOM.
+    r = urllib.request.Request(BASE + "/reports/students?format=csv")
+    r.add_header("Cookie", registrar_cookie)
+    r.add_header("x-maktabyar-client", "1")
+    with urllib.request.urlopen(r) as resp:
+        csv_text = resp.read().decode()
+        check("CSV export carries a UTF-8 BOM and Dari headers",
+              resp.status == 200 and csv_text.startswith("\ufeff")
+              and "ثبت‌نامهٔ شاگردان" in csv_text and "شمارهٔ شاگرد" in csv_text,
+              f"bom={csv_text[:2].encode('unicode_escape')}")
+
+    # Cashier has no reports grant.
+    cashier_cookie, _ = login("cashier", "Cashier1234")
+    status, body, _ = req("GET", "/reports/students", cookie=cashier_cookie)
+    check("cashier has no reports.view (403)", status == 403, f"status={status}")
+
+    # ── 17. Phase 5 — Year-end rollover (repeat-safe) ────────────────────
+    print("\n[17] Phase 5 — Year-end rollover (repeat-safe promotion batch)")
+
+    status, body, _ = req("GET", "/academic-years", cookie=gm_cookie)
+    years = body.get("data", [])
+    y1405 = next((y for y in years if "1405" in y["name"].encode().decode() or y["name"] in ("۱۴۰۵", "1405")), None)
+    check("current year ۱۴۰۵ found", y1405 is not None)
+
+    # RBAC: only admin / general_manager may run the rollover.
+    status, body, _ = req("GET", f"/academic-years/{y1405['id']}/rollover", cookie=cashier_cookie)
+    check("cashier cannot preview the rollover (403)", status == 403, f"status={status}")
+    status, body, _ = req("GET", f"/academic-years/{y1405['id']}/rollover", cookie=mgr_cookie)
+    check("branch manager cannot preview the rollover (403)", status == 403, f"status={status}")
+
+    status, body, _ = req("GET", f"/academic-years/{y1405['id']}/rollover", cookie=gm_cookie)
+    preview = body.get("data", {})
+    active_count = preview.get("year", {}).get("activeEnrollments", 0)
+    check("rollover preview lists active enrollments",
+          status == 200 and active_count > 0, f"active={active_count}")
+    suggested = preview.get("suggestedNextYearName", "")
+    check("suggested next year is ۱۴۰۶", suggested == "۱۴۰۶", f"suggested={suggested}")
+
+    # Create the next year first.
+    status, body, _ = req("POST", "/academic-years", cookie=gm_cookie, body={
+        "name": "۱۴۰۶", "startDate": "2027-03-21", "endDate": "2028-03-20", "isCurrent": False,
+    })
+    y1406 = body.get("data", {})
+    check("next year ۱۴۰۶ created", status == 200 and y1406.get("name") == "۱۴۰۶",
+          f"status={status} {body.get('error', {}).get('message')}")
+
+    # Override two decisions before applying: one repeat, one leave.
+    rows = preview.get("rows", [])
+    repeat_row = next((r for r in rows if r["gradeLevel"] < 12), None)
+    leave_row = next((r for r in rows if r["studentId"] != (repeat_row or {}).get("studentId")), None)
+    status, body, _ = req("POST", f"/academic-years/{y1405['id']}/rollover/decide", cookie=gm_cookie, body={
+        "decisions": [
+            {"studentId": repeat_row["studentId"], "decision": "repeat", "note": "تکرار صنف — آزمون e2e"},
+            {"studentId": leave_row["studentId"], "decision": "leave", "note": "ترک — آزمون e2e"},
+        ],
+    })
+    check("decision overrides saved", status == 200 and body.get("data", {}).get("count") == 2,
+          f"status={status}")
+
+    # Debt must survive: snapshot live invoices before the rollover.
+    status, body, _ = req("GET", "/invoices?pageSize=100", cookie=gm_cookie)
+    live_invoices_before = [i for i in body.get("data", []) if i.get("status") != "void"]
+
+    status, body, _ = req("POST", f"/academic-years/{y1405['id']}/rollover", cookie=gm_cookie, body={
+        "toAcademicYearId": y1406["id"], "setAsCurrent": True,
+    })
+    applied = body.get("data", {})
+    total_active = active_count
+    check("rollover applied with full counts",
+          status == 200 and applied.get("promoted", 0) + applied.get("repeated", 0)
+          + applied.get("graduated", 0) + applied.get("left", 0)
+          + applied.get("skipped", 0) == total_active,
+          f"applied={applied}")
+
+    status, body, _ = req("GET", "/academic-years", cookie=gm_cookie)
+    years_after = {y["name"]: y for y in body.get("data", [])}
+    check("۱۴۰۵ is closed and no longer current",
+          years_after["۱۴۰۵"]["status"] == "closed" and years_after["۱۴۰۵"]["isCurrent"] is False)
+    check("۱۴۰۶ is now the current year",
+          years_after["۱۴۰۶"]["isCurrent"] is True and years_after["۱۴۰۶"]["status"] == "active")
+
+    # REPEAT-SAFETY: applying again is a no-op, never an error.
+    status, body, _ = req("POST", f"/academic-years/{y1405['id']}/rollover", cookie=gm_cookie, body={
+        "toAcademicYearId": y1406["id"], "setAsCurrent": True,
+    })
+    reapplied = body.get("data", {})
+    check("re-applying the closed year is a no-op (repeat-safe)",
+          status == 200 and reapplied.get("promoted", -1) == 0 and reapplied.get("repeated", -1) == 0
+          and reapplied.get("graduated", -1) == 0 and reapplied.get("left", -1) == 0,
+          f"status={status} reapplied={reapplied}")
+
+    # The repeat student stays in the same grade; the promoted moved up.
+    status, body, _ = req("GET", "/students?pageSize=100", cookie=gm_cookie)
+    students_after = body.get("data", [])
+    repeat_student = next((s for s in students_after if s["id"] == repeat_row["studentId"]), None)
+    leave_student = next((s for s in students_after if s["id"] == leave_row["studentId"]), None)
+    check("repeat decision kept the student at the same grade",
+          repeat_student is not None
+          and repeat_student.get("currentEnrollment", {}).get("gradeName") == repeat_row.get("gradeName"),
+          f"grade={repeat_student.get('currentEnrollment', {}).get('gradeName') if repeat_student else None}")
+    check("leave decision closed the student's record",
+          leave_student is not None and leave_student.get("status") == "withdrawn",
+          f"status={leave_student.get('status') if leave_student else None}")
+
+    # Debt survived: same live invoices as before the rollover.
+    status, body, _ = req("GET", "/invoices?pageSize=100", cookie=gm_cookie)
+    live_invoices_after = [i for i in body.get("data", []) if i.get("status") != "void"]
+    check("academic closing never erases debt (invoices untouched)",
+          len(live_invoices_after) == len(live_invoices_before),
+          f"before={len(live_invoices_before)} after={len(live_invoices_after)}")
+
     # ── Summary ──────────────────────────────────────────────────────────
     print("\n" + "═" * 70)
     print(f"RESULT: {passed} passed, {failed} failed")

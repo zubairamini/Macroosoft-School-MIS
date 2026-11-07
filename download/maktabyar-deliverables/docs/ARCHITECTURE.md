@@ -20,8 +20,13 @@
 │     4. uniform Dari error envelope (no stack traces)             │
 ├──────────────────────────────────────────────────────────────────┤
 │ Application/domain layer — src/server/<module>/                  │
-│   academic/ admissions/ students/ guardians/ dashboard/ search/  │
-│   users/ settings/ notifications/ auth/ rbac/ shared/            │
+│   academic/ (incl. rollover.ts) admissions/ students/            │
+│   guardians/ dashboard/ search/ users/ settings/                │
+│   notifications/ auth/ rbac/ shared/                             │
+│   attendance/ teaching/ assessments/  (Phase 2)                  │
+│   finance/  (Phase 3)                                            │
+│   library/ communications/  (Phase 4)                            │
+│   services/ reports/  (Phase 5)                                  │
 │   domain rules + use cases + DTOs (zod). No React, no HTTP.      │
 ├──────────────────────────────────────────────────────────────────┤
 │ Infrastructure — Prisma (src/lib/db.ts) + SQLite (sandbox)       │
@@ -80,13 +85,14 @@ Extraction steps (documented for Phase 2+):
 | Concurrency | version columns | optimistic checks → 409 with Dari message; conditional `updateMany` for state transitions |
 | Validation | zod DTOs per module | field-level Dari messages in the error envelope |
 
-## 4. Data model highlights (Phase 1)
+## 4. Data model highlights
 
 Full schema: `prisma/schema.prisma`. Key invariants:
 
 - `Student` (persistent identity) is separate from `Enrollment`
   (per-year record); `@@unique([studentId, academicYearId])` makes duplicate
-  enrollment structurally impossible.
+  enrollment structurally impossible — and is what makes the Phase-5
+  year-end rollover repeat-safe.
 - `Application.personal/guardians/documents` are JSON snapshots at admission
   time; the enrollment transaction copies them into normalized
   `Student`/`Guardian`/`StudentGuardian`/`StudentDocument` rows.
@@ -96,6 +102,19 @@ Full schema: `prisma/schema.prisma`. Key invariants:
   PostgreSQL `enum` conversion.
 - No soft deletes: corrections are new records (status changes, reversals)
   referencing history. See DOMAIN-WORKFLOWS.md.
+- **Phase 4**: `BookTitle` (catalog) vs `BookCopy` (physical) vs `BookLoan`
+  (one active loan per copy — transactional conditional flip, since SQLite
+  lacks partial unique indexes); fines link to real `Invoice` rows
+  (`periodKey "fine:<loanId>"`). `Announcement` + `AnnouncementRead`
+  (unique per user/announcement); `MessageLog` (queued — never faked).
+- **Phase 5**: `TransportRoute`/`TransportPassenger` (transactional capacity),
+  `InventoryItem` + append-only `InventoryMovement` (negative stock
+  impossible), `GuestVisit` (arrival/departure instants), `SchoolEvent`
+  (branchId null = org-wide), and `PromotionDecision`
+  (`@@unique([academicYearId, studentId])`, `appliedAt` for repeat-safe
+  batches).
+- Every Phase-4/5 business row carries `branchId` for the strict branch
+  isolation policy (only admin / general_manager cross branches).
 
 ## 5. Frontend architecture
 
@@ -110,6 +129,10 @@ Full schema: `prisma/schema.prisma`. Key invariants:
   (#047857 primary, #0F172A headings, #F8FAFC background, #CBD5E1 borders,
   restrained amber) with AA contrast; `prefers-reduced-motion` collapses all
   animation.
-- Sidebar navigation = the 12 module groups; unauthorized groups hidden,
-  future-phase groups visibly marked «بعدی» and route to honest roadmap
-  pages. Every visible button either works or states exactly why not.
+- Sidebar navigation = the module groups; unauthorized groups hidden.
+  All five phases are implemented — the roadmap pages remain only for
+  honest "not built" notices. Every visible button either works or states
+  exactly why not.
+- Print surfaces (ID cards, reports) render dedicated `#cards-print-area`
+  / `#report-print-area` sheets with `@media print` CSS; CSV export goes
+  through the authenticated client (`api.getRaw`) with a UTF-8 BOM.

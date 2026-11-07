@@ -1,4 +1,4 @@
-# Test Results — actual runs (Phase 2: 2026-11-07; Phase 1: 2026-11-06)
+# Test Results — actual runs (Phases 4&5: 2026-11-07; Phase 3: 2026-11-07; Phase 2: 2026-11-07; Phase 1: 2026-11-06)
 
 All commands were executed against the live sandbox environment; outputs
 below are the real results, not claims.
@@ -243,3 +243,66 @@ bun run db:seed         # restore the clean demo state afterwards
 
 `tests/e2e_api.py` mutates the demo database (test application/student,
 سنبله invoices, payroll payments) — the DB was re-seeded after this run.
+
+## 8. Phases 4 & 5 — library, communications, services, reports, rollover (2026-11-07)
+
+### 8.1 Scope of this run
+
+Implemented in this session: the library module (catalog/copies/loans with
+linked fine invoices), announcements with read receipts + the queued
+SMS/email log, the guardian/student portal aggregate, ID-card printing,
+school services (transport/inventory/guests/events), printable + CSV
+registries, and the repeat-safe year-end rollover — all Dari/RTL, all
+branch-isolated, all permission-gated.
+
+### 8.2 Type safety
+
+```
+$ bun run typecheck        # tsc --noEmit
+(no output — clean)
+```
+
+### 8.3 Unit tests (`bun test`)
+
+```
+$ bun test tests/
+ 99 pass
+ 0 fail
+1361 expect() calls
+Ran 99 tests across 6 files.
+```
+
+New suites:
+
+| Suite | Key verified behaviors |
+|---|---|
+| `tests/phase4.test.ts` | library DTO validation with Dari messages (bounded copy counts, copy-status closed set, non-negative fines, future due dates); loan state machine mirror (only active can close; **fines only for LATE returns**); audience closed set with labels; **branch isolation for library/communications grants (fail closed without branchId)**; admin/GM cross-branch narrowing |
+| `tests/phase5.test.ts` | **CSV contract (BOM, title/meta lines, RFC-4180 quoting)**; report kinds closed set; **Persian-digit year-name math («۱۴۰۵»→1406)**; decision closed set; rollover DTOs (setAsCurrent default, empty batch rejected); services DTO validation (capacity bounds, non-zero movements, guest purposes, event kinds, **endsOn ≥ startsOn**); **year_end RBAC (only admin/GM)** |
+
+### 8.4 End-to-end API integration
+
+```
+RESULT: 200 passed, 0 failed
+```
+
+New sections in this run:
+
+| Section | Key verified behaviors |
+|---|---|
+| [13] Library | librarian sees only main-branch titles; **checkout → active loan; second active loan of the same copy 409**; **on-time return with fine 400**; plain return frees the copy; **lost book with fine creates a linked finance invoice** (fine count +1); manager2 sees only second-branch loans; teacher 403 on library.manage |
+| [14] Announcements & messages | draft invisible to non-managers; publish → visible; **read receipt idempotent (repeat = 200)**; guardian portal returns exactly 2 children with attendance/grades/announcements; **guardian SMS fan-out queues rows (never faked "sent")** |
+| [15] Services | transport route + passenger; **capacity overflow 409**; **second-branch student rejected on main-branch route 400**; inventory: **issue-from-zero 409**, receive/issue update quantity transactionally, ledger lists movements; guest arrival → checkout stamps leftAt; **double checkout 400**; **manager2 sees org-wide events but not main-branch ones** |
+| [16] Reports | students registry rows + 8 Dari columns; attendance report includes «نا-ثبت» column (conservation); results report (published only); **teacher's registry narrower than registrar's (auto section-scope)**; **CSV export: BOM + Dari headers**; cashier 403 (no reports.view) |
+| [17] Year-end rollover | cashier 403 / **branch manager 403 (only admin/GM)**; preview with counts; suggested next year «۱۴۰۶»; decision overrides saved; **apply → full counts, ۱۴۰۵ closed, ۱۴۰۶ current**; **re-apply = no-op (repeat-safe)**; repeat keeps grade, leave closes record; **invoice count unchanged across the rollover (debt survives)** |
+
+### 8.5 Reproduction
+
+```bash
+bun run typecheck
+bun run test            # 99 unit tests
+bun run test:e2e        # 200 API checks (requires dev server on :3000)
+bun run db:seed         # restore the clean demo state afterwards
+```
+
+`tests/e2e_api.py` mutates the demo database (closes year ۱۴۰۵, creates
+۱۴۰۶, test loans/routes/items/guests) — the DB was re-seeded after this run.

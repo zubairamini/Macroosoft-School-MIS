@@ -196,6 +196,22 @@ async function main() {
     db.notification.deleteMany(),
     db.outboxEvent.deleteMany(),
     db.auditEvent.deleteMany(),
+    // ── Phase 4/5 children FIRST (FK order): loans/copies/titles,
+    //    read receipts/announcements/messages, passengers/routes,
+    //    movements/items, guests, events, promotion decisions.
+    db.bookLoan.deleteMany(),
+    db.bookCopy.deleteMany(),
+    db.bookTitle.deleteMany(),
+    db.announcementRead.deleteMany(),
+    db.announcement.deleteMany(),
+    db.messageLog.deleteMany(),
+    db.transportPassenger.deleteMany(),
+    db.transportRoute.deleteMany(),
+    db.inventoryMovement.deleteMany(),
+    db.inventoryItem.deleteMany(),
+    db.guestVisit.deleteMany(),
+    db.schoolEvent.deleteMany(),
+    db.promotionDecision.deleteMany(),
     // Phase 3 — finance (children before parents)
     db.payrollItem.deleteMany(),
     db.payrollRun.deleteMany(),
@@ -1311,6 +1327,382 @@ async function main() {
       body: "رسیدهای ماهٔ میزان ۱۴۰۵ در شعبهٔ کارتهٔ نو ثبت شد.",
       link: "#/finance/payments",
     },
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Phase 4 — library, announcements & messages (demo data)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── Library: titles, copies, loans ──────────────────────────────────────
+  interface SeedBook { branchId: string; title: string; author: string; publisher: string; isTextbook: boolean; gradeLevels: number[]; copies: number }
+  const books: SeedBook[] = [
+    { branchId: mainBranch.id, title: "ریاضی صنف پنجم", author: "کتاب‌های تعلیمی مطبوعاتی", publisher: "چاپ دولتی", isTextbook: true, gradeLevels: [5], copies: 4 },
+    { branchId: mainBranch.id, title: "دری صنف پنجم", author: "کتاب‌های تعلیمی مطبوعاتی", publisher: "چاپ دولتی", isTextbook: true, gradeLevels: [5], copies: 4 },
+    { branchId: mainBranch.id, title: "کلید ذهن — مجموعه قصه‌های کودکان", author: "محمد//رسول بهار", publisher: "انتشارات میهن", isTextbook: false, gradeLevels: [3, 4, 5, 6], copies: 2 },
+    { branchId: mainBranch.id, title: "تاریخ افغانستان — مختصر", author: "میر//محمد//صدیق فرهنگ", publisher: "انتشارات سنایی", isTextbook: false, gradeLevels: [7, 8, 9], copies: 3 },
+    { branchId: secondBranch.id, title: "علوم صنف هفتم", author: "کتاب‌های تعلیمی مطبوعاتی", publisher: "چاپ دولتی", isTextbook: true, gradeLevels: [7], copies: 3 },
+    { branchId: secondBranch.id, title: "انگلیسی مقدماتی", author: "استاد نعیم//الله صافی", publisher: "انتشارات روشن", isTextbook: false, gradeLevels: [7, 8], copies: 2 },
+  ];
+
+  let bookSeq = 0;
+  for (const b of books) {
+    const titleRow = await db.bookTitle.create({
+      data: {
+        orgId: org.id,
+        branchId: b.branchId,
+        title: b.title,
+        author: b.author,
+        publisher: b.publisher,
+        gradeLevels: JSON.stringify(b.gradeLevels),
+        isTextbook: b.isTextbook,
+        createdById: userRows.librarian.id,
+      },
+    });
+    for (let i = 0; i < b.copies; i++) {
+      bookSeq += 1;
+      await db.bookCopy.create({
+        data: {
+          orgId: org.id,
+          titleId: titleRow.id,
+          branchId: b.branchId,
+          copyCode: `B-${year1405.name}-${String(bookSeq).padStart(4, "0")}`,
+          status: "available",
+          condition: i === 0 ? "کم‌استعمال" : "نو",
+        },
+      });
+    }
+  }
+  await db.counter.create({ data: { key: `book:${year1405.name}`, value: bookSeq } });
+
+  // Loans: one returned on time, one ACTIVE & overdue, one lost with a fine
+  // invoice (the fine is a real Invoice row like the runtime issues).
+  const allTitles = await db.bookTitle.findMany({
+    where: { branchId: mainBranch.id },
+    include: { copies: { orderBy: { copyCode: "asc" } } },
+  });
+  const secondTitles = await db.bookTitle.findMany({
+    where: { branchId: secondBranch.id },
+    include: { copies: { orderBy: { copyCode: "asc" } } },
+  });
+
+  const mainLoanStudents = mainStudents.slice(0, 3);
+  const today = new Date();
+
+  // returned on time
+  if (allTitles[0] && mainLoanStudents[0]) {
+    await db.bookLoan.create({
+      data: {
+        orgId: org.id,
+        copyId: allTitles[0].copies[0].id,
+        studentId: mainLoanStudents[0].student.id,
+        branchId: mainBranch.id,
+        loanedOn: "2026-09-20",
+        dueOn: "2026-10-05",
+        returnedOn: "2026-10-02",
+        status: "returned",
+        loanedById: userRows.librarian.id,
+        returnedById: userRows.librarian.id,
+      },
+    });
+    await db.bookCopy.update({ where: { id: allTitles[0].copies[0].id }, data: { status: "available" } });
+  }
+  // active + overdue (due date already passed)
+  if (allTitles[2] && mainLoanStudents[1]) {
+    await db.bookLoan.create({
+      data: {
+        orgId: org.id,
+        copyId: allTitles[2].copies[0].id,
+        studentId: mainLoanStudents[1].student.id,
+        branchId: mainBranch.id,
+        loanedOn: "2026-09-25",
+        dueOn: "2026-10-10",
+        status: "active",
+        note: "قصه‌نامه برای خانه",
+        loanedById: userRows.librarian.id,
+      },
+    });
+    await db.bookCopy.update({ where: { id: allTitles[2].copies[0].id }, data: { status: "loaned" } });
+  }
+  // lost with fine → linked invoice
+  if (allTitles[3] && mainLoanStudents[2]) {
+    invoiceSeq += 1;
+    const fineInvoice = await db.invoice.create({
+      data: {
+        orgId: org.id,
+        invoiceNumber: `F-${year1405.name}-${String(invoiceSeq).padStart(4, "0")}`,
+        academicYearId: year1405.id,
+        branchId: mainBranch.id,
+        studentId: mainLoanStudents[2].student.id,
+        periodKey: `fine:seed-lost-1`,
+        periodLabel: `جریمهٔ کتاب «${allTitles[3].title}»`,
+        amountDiram: 250 * 100,
+        discountDiram: 0,
+        netDiram: 250 * 100,
+        paidDiram: 0,
+        status: "issued",
+        note: "جریمهٔ کتابخانه (نسخهٔ گم‌شده)",
+        issuedById: userRows.librarian.id,
+      },
+    });
+    await db.bookLoan.create({
+      data: {
+        orgId: org.id,
+        copyId: allTitles[3].copies[0].id,
+        studentId: mainLoanStudents[2].student.id,
+        branchId: mainBranch.id,
+        loanedOn: "2026-09-15",
+        dueOn: "2026-09-30",
+        status: "lost",
+        fineDiram: 250 * 100,
+        fineInvoiceId: fineInvoice.id,
+        note: "نسخه گم شده است",
+        loanedById: userRows.librarian.id,
+        returnedById: userRows.librarian.id,
+      },
+    });
+    await db.bookCopy.update({ where: { id: allTitles[3].copies[0].id }, data: { status: "lost" } });
+  }
+  // second-branch active loan
+  if (secondTitles[0] && secondStudents[0]) {
+    await db.bookLoan.create({
+      data: {
+        orgId: org.id,
+        copyId: secondTitles[0].copies[0].id,
+        studentId: secondStudents[0].student.id,
+        branchId: secondBranch.id,
+        loanedOn: "2026-10-20",
+        dueOn: "2026-11-20",
+        status: "active",
+        loanedById: userRows.manager2.id,
+      },
+    });
+    await db.bookCopy.update({ where: { id: secondTitles[0].copies[0].id }, data: { status: "loaned" } });
+  }
+  // keep the invoice counter in sync with the seeded fine invoice
+  await db.counter.update({
+    where: { key: `invoice:${year1405.name}` },
+    data: { value: invoiceSeq },
+  });
+
+  // ── Announcements & read receipts ───────────────────────────────────────
+  const ann1 = await db.announcement.create({
+    data: {
+      orgId: org.id,
+      branchId: mainBranch.id,
+      audience: "all",
+      title: "جلسهٔ اولیا و اساتید",
+      body: "جلسهٔ اولیا روز سه‌شنبه ساعت ۱۰:۰۰ صبح در سالون مکتب برگزار می‌شود. حضور اولیا تقاضا می‌شود.",
+      status: "published",
+      publishedById: userRows.manager.id,
+      publishedAt: today,
+    },
+  });
+  const ann2 = await db.announcement.create({
+    data: {
+      orgId: org.id,
+      branchId: mainBranch.id,
+      audience: "guardians",
+      title: "یادآوری پرداخت شهریهٔ ماه عقرب",
+      body: "اولیای محترم خواهشمند است شهریهٔ ماه عقرب ۱۴۰۵ را تا ۵ نوامبر در صندوق مکتب پرداخت نمایند.",
+      status: "published",
+      publishedById: userRows.finance.id,
+      publishedAt: today,
+    },
+  });
+  await db.announcement.create({
+    data: {
+      orgId: org.id,
+      branchId: mainBranch.id,
+      audience: "staff",
+      title: "جلسهٔ کادر تعلیمی (پیش‌نویس)",
+      body: "دستور جلسهٔ کادر: آمادگی امتحانات میان‌ترم و تقسیم نگرانی صفوف.",
+      status: "draft",
+    },
+  });
+  await db.announcement.create({
+    data: {
+      orgId: org.id,
+      branchId: secondBranch.id,
+      audience: "all",
+      title: "روز سلامت — شعبهٔ خوشحال خان",
+      body: "برنامهٔ روز سلامت با همکاری کلینیک محل، روز پنج‌شنبه در مکتب برگزار می‌گردد.",
+      status: "published",
+      publishedById: userRows.manager2.id,
+      publishedAt: today,
+    },
+  });
+  // read receipts: the cashier and academic read the general announcement
+  await db.announcementRead.createMany({
+    data: [
+      { announcementId: ann1.id, userId: userRows.cashier.id },
+      { announcementId: ann1.id, userId: userRows.academic.id },
+      { announcementId: ann2.id, userId: userRows.cashier.id },
+    ],
+  });
+
+  // ── Message log (queued SMS to guardians) ───────────────────────────────
+  const guardianPhones = await db.guardian.findMany({
+    where: { students: { some: { student: { enrollments: { some: { classSection: { branchId: mainBranch.id } } } } } } },
+    select: { phone: true },
+    take: 4,
+  });
+  if (guardianPhones.length > 0) {
+    await db.messageLog.createMany({
+      data: guardianPhones
+        .filter((g) => g.phone)
+        .map((g) => ({
+          orgId: org.id,
+          branchId: mainBranch.id,
+          channel: "sms",
+          recipient: g.phone as string,
+          body: "مکتب مکتب‌یار: یادآوری جلسهٔ اولیا روز سه‌شنبه ساعت ۱۰ صبح.",
+          status: "queued",
+          relatedType: "Announcement",
+          relatedId: ann1.id,
+          sentById: userRows.manager.id,
+        })),
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Phase 5 — services & events (demo data)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── Transport routes & passengers ───────────────────────────────────────
+  const routeMain = await db.transportRoute.create({
+    data: {
+      orgId: org.id,
+      branchId: mainBranch.id,
+      name: "سرویس کارتهٔ نو — مسیر اول",
+      driverName: "راننده عبدالرحیم",
+      vehicle: "کورولا سفید — 04 Kabul 1234",
+      capacity: 4,
+      monthlyFeeDiram: 600 * 100,
+      stops: JSON.stringify(["چواراهی پرچم", "شهرنو", "کارتهٔ نو"]),
+      createdById: userRows.manager.id,
+    },
+  });
+  const routeSecond = await db.transportRoute.create({
+    data: {
+      orgId: org.id,
+      branchId: secondBranch.id,
+      name: "سرویس خوشحال خان — مسیر اول",
+      driverName: "راننده نظر//محمد",
+      capacity: 3,
+      monthlyFeeDiram: 500 * 100,
+      stops: JSON.stringify(["دِه‌سبز", "خوشحال خان"]),
+      createdById: userRows.manager2.id,
+    },
+  });
+  for (const [i, e] of mainStudents.slice(0, 3).entries()) {
+    await db.transportPassenger.create({
+      data: {
+        routeId: routeMain.id,
+        studentId: e.student.id,
+        stopName: ["چواراهی پرچم", "شهرنو", "کارتهٔ نو"][i] ?? null,
+        status: "active",
+      },
+    });
+  }
+  if (secondStudents[0]) {
+    await db.transportPassenger.create({
+      data: { routeId: routeSecond.id, studentId: secondStudents[0].student.id, stopName: "دِه‌سبز", status: "active" },
+    });
+  }
+
+  // ── Inventory items + ledger movements ──────────────────────────────────
+  interface SeedItem { branchId: string; name: string; unit: string; received: number; issued: number; min: number }
+  const items: SeedItem[] = [
+    { branchId: mainBranch.id, name: "تخته‌سپیده", unit: "عدد", received: 60, issued: 35, min: 20 },
+    { branchId: mainBranch.id, name: "مداد جعبه‌ای", unit: "بسته", received: 40, issued: 22, min: 10 },
+    { branchId: mainBranch.id, name: "گچ سفید", unit: "بسته", received: 30, issued: 28, min: 10 },
+    { branchId: secondBranch.id, name: "تخته‌سپیده", unit: "عدد", received: 25, issued: 12, min: 10 },
+  ];
+  for (const it of items) {
+    const item = await db.inventoryItem.create({
+      data: {
+        orgId: org.id,
+        branchId: it.branchId,
+        name: it.name,
+        unit: it.unit,
+        quantity: it.received - it.issued,
+        minQuantity: it.min,
+        createdById: userRows.manager.id,
+      },
+    });
+    await db.inventoryMovement.create({
+      data: { itemId: item.id, delta: it.received, reason: "خرید ابتدای سال تعلیمی", byId: userRows.manager.id },
+    });
+    await db.inventoryMovement.create({
+      data: { itemId: item.id, delta: -it.issued, reason: "توزیع به صنوف", byId: userRows.manager.id },
+    });
+  }
+
+  // ── Guest register ──────────────────────────────────────────────────────
+  await db.guestVisit.create({
+    data: {
+      orgId: org.id,
+      branchId: mainBranch.id,
+      fullName: "انجنیر حبیب//الله رحیمی",
+      purpose: "ملاقات مدیر مکتب — قرارداد ترمیم",
+      hostName: "استاد عبدالقادر برات",
+      idNumber: "T-1400-1234",
+      visitorCount: 2,
+      arrivedAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+      createdById: userRows.registrar.id,
+    },
+  });
+  await db.guestVisit.create({
+    data: {
+      orgId: org.id,
+      branchId: mainBranch.id,
+      fullName: "محترمه فرشته کریمی",
+      purpose: "پیگیری پروندهٔ شمولیت فرزند",
+      hostName: "محترمه نعیمه صمدی",
+      visitorCount: 1,
+      arrivedAt: new Date(Date.now() - 26 * 60 * 60 * 1000),
+      leftAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+      createdById: userRows.registrar.id,
+    },
+  });
+
+  // ── Event calendar ──────────────────────────────────────────────────────
+  await db.schoolEvent.createMany({
+    data: [
+      {
+        orgId: org.id,
+        branchId: null, // org-wide — visible in every branch
+        title: "امتحانات میان‌ترم نیم‌سال اول",
+        kind: "exam",
+        startsOn: "2026-11-15",
+        endsOn: "2026-11-25",
+        createdById: userRows.gm.id,
+      },
+      {
+        orgId: org.id,
+        branchId: null,
+        title: "رخصتی رسمی — روز استقلال",
+        kind: "holiday",
+        startsOn: "2026-08-19",
+        createdById: userRows.gm.id,
+      },
+      {
+        orgId: org.id,
+        branchId: mainBranch.id,
+        title: "مراسم توزیع کارت‌های شناسایی",
+        kind: "ceremony",
+        startsOn: "2026-11-10",
+        createdById: userRows.manager.id,
+      },
+      {
+        orgId: org.id,
+        branchId: secondBranch.id,
+        title: "جلسهٔ کادر شعبهٔ خوشحال خان",
+        kind: "meeting",
+        startsOn: "2026-11-12",
+        createdById: userRows.manager2.id,
+      },
+    ],
   });
 
   console.log("✅ Seed complete.");

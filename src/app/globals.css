@@ -175,3 +175,42 @@
   border-radius: 3px;
 }
 
+
+/* ── Print sheets (Phase 4/5: ID cards, reports) ──────────────────────────
+   When the browser print dialog runs, everything outside the marked print
+   area is hidden and the area flows on plain white A4. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #cards-print-area,
+  #cards-print-area * {
+    visibility: visible;
+  }
+  #report-print-area,
+  #report-print-area * {
+    visibility: visible;
+  }
+  #cards-print-area,
+  #report-print-area {
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    background: white;
+  }
+  .no-print,
+  .no-print * {
+    display: none !important;
+    visibility: hidden;
+  }
+  .print-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  @page {
+    size: A4;
+    margin: 8mm;
+  }
+}

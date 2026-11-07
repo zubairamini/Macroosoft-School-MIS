@@ -7,14 +7,14 @@ Nothing here is hidden behind marketing language.
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Architecture, schema, auth, permissions, localization, design system, school setup, admissions, student profiles | ✅ **Delivered & verified** (this release) |
-| 2 | Staff register, teaching assignments, timetables, attendance, exams & grades, report cards | ✅ **Delivered & verified** (this release) |
-| 3 | Fees & discounts, invoices, payments/receipts, expenses, payroll, financial reports, **strict branch isolation** | ✅ **Delivered & verified** (this release) |
-| 4 | Textbooks, library, cards/documents/printing, communications, portals | 🔜 Not started |
-| 5 | Optional services, year-end closing, performance, security hardening | 🔜 Not started |
+| 1 | Architecture, schema, auth, permissions, localization, design system, school setup, admissions, student profiles | ✅ **Delivered & verified** |
+| 2 | Staff register, teaching assignments, timetables, attendance, exams & grades, report cards | ✅ **Delivered & verified** |
+| 3 | Fees & discounts, invoices, payments/receipts, expenses, payroll, financial reports, **strict branch isolation** | ✅ **Delivered & verified** |
+| 4 | Library, announcements/messages, ID cards & printing, guardian/student portal | ✅ **Delivered & verified** (this release) |
+| 5 | Services (transport/inventory/guests/events), reports & CSV export, **repeat-safe year-end rollover**, security hardening | ✅ **Delivered & verified** (this release) |
 
-Sidebar entries for future phases are visible, marked «بعدی», and route to
-roadmap pages that say precisely what remains — no fake screens.
+All five phases of the original specification are now implemented. The
+remaining items below are honest gaps, not hidden roadmap claims.
 
 ## Deliberate sandbox adaptations (not claimed as production topology)
 
@@ -39,17 +39,19 @@ roadmap pages that say precisely what remains — no fake screens.
 ## Functional limitations in the delivered slice
 
 - **Admission stepper fee-plan step is a recorded placeholder** — the fee
-  module (Phase 3) will consume the stored choice. The UI says so plainly.
+  module consumes the stored choice. The UI says so plainly.
 - **User creation offers system roles only**; custom roles and multi-role
   assignment UI remain future work (the data model supports both).
-- **No branch switcher control yet** — branch context is displayed in the
-  top bar; authorization treats unnarrowed branch grants as all-branches.
 - **Document uploads**: the checklist is recorded, but file storage with
-  signed private access is Phase 4 (schema ready: `StudentDocument.fileUrl`).
-- **Exports** (xlsx/pdf) are permission-gated in the UI but the generation
-  pipeline (background jobs) is Phase 3/4 — the UI states this instead of
-  faking a download.
-- **Print templates, ID cards, QR verification** — Phase 4, not present.
+  signed private access is not wired (`StudentDocument.fileUrl` ready).
+- **SMS/email delivery**: `POST /messages` and the announcement fanout
+  write `MessageLog` rows with status `queued` + outbox events — the actual
+  gateway (Afghan SMS provider / SMTP) is a production integration point.
+  Nothing is ever marked «sent» locally; the UI states «در صف ارسال».
+- **ID-card photos**: the print sheet renders a photo placeholder; real
+  photos need the document-upload pipeline above.
+- **CSV only for registry exports**: xlsx/pdf pipelines remain future
+  work (CSV carries a BOM so Excel opens Dari correctly).
 - **Offline attendance sync, conflict workflow** — designed (version
   columns everywhere) but not implemented; nothing claims offline support.
 - **MFA for privileged roles, password reset via SMS** — not implemented;
@@ -68,7 +70,8 @@ roadmap pages that say precisely what remains — no fake screens.
   assessment publishes snapshot {maxScore, weight, type}; full versioned
   policy documents remain future work).
 - No online payment integration exists or is advertised.
-- Transport maps are not GPS tracking (module not built at all).
+- Transport is a route/passenger register — **not** GPS tracking or live
+  bus maps (nothing of the sort is claimed).
 - Backup/restore procedure is documented and drill-verified for SQLite in
   this sandbox (see DEPLOYMENT.md §4); PostgreSQL drills come with the PG
   migration.
@@ -126,19 +129,53 @@ Money is stored as integer diram (100 diram = 1 AFN) — never floats.
 - Double-entry accounting (journal entries that must balance) — the current
   ledger is a cash-book view (payments + expenses), which is what Afghan
   private schools asked for first; a full chart of accounts remains open.
-- SMS/e-receipt delivery for parents (outbox events are written; the worker
-  integration is Phase 4).
+- SMS/e-receipt delivery for parents (queued `MessageLog` rows + outbox
+  events are written since Phase 4; the actual gateway wiring is a
+  production integration point).
 - Fee installment plans (N installments per invoice) — currently one
   invoice = one net amount with arbitrary partial payments.
 
-## Recommended next steps (Phase 4 opening moves)
+## Phase 4 — delivered in this release (2026-11-07)
 
-1. Library & textbooks (catalog, copies, lending, textbook distribution
-   linked to fees) — module toggle exists.
-2. Announcements & messaging (branch/class-scoped, read states, SMS/email
-   worker on the existing outbox).
-3. Student/parent portal surfaces for finance (invoice detail is already
-   guardian-scoped; a dedicated portal layout remains).
-4. Cards/documents printing framework (report cards exist; formal print
-   templates with school letterhead next).
-5. Custom roles UI + export jobs (carry-over from Phase 2 polish).
+**Library**: catalog (title vs physical copy), bulk copy numbering
+(`B-۱۴۰۵-NNNN`), loans with the one-active-loan-per-copy invariant
+(transactional conditional flip → 409 on double checkout), overdue
+tracking, and **fines issued as real linked finance invoices**
+(`periodKey "fine:<loanId>"` — payments/voiding/audit come free from
+Phase 3). **Announcements**: branch/section-scoped with audience
+(`all|staff|guardians`), draft→publish gate, idempotent per-user read
+receipts; guardians see announcements of their children's branches.
+**Messages**: group sends to guardians/staff are recorded in a queued
+`MessageLog` + outbox events (gateway = production integration).
+**Portal**: one aggregate endpoint serving the guardian/student view —
+children with enrollment, attendance snapshot, published subject averages,
+outstanding balance, latest announcements. **ID cards**: printable A4
+sheet per class section (print CSS + photo placeholders).
+
+## Phase 5 — delivered in this release (2026-11-07)
+
+**Services**: transport routes with transactional capacity checks and
+branch-bound passengers; inventory as an append-only movement ledger
+(negative stock impossible); guest register with checkout; event calendar
+with org-wide (branchId null) vs branch events. **Reports**: students
+registry, attendance (with «نا-ثبت» conservation) and published results —
+screen preview, print sheet and **CSV export with UTF-8 BOM**; scopes reuse
+the RBAC engine (teachers auto-narrow to their sections).
+**Year-end rollover**: preview → per-student decision overrides
+(promote/repeat/graduate/leave) → apply. Repeat-safe by construction
+(structural enrollment uniqueness + `appliedAt`); re-running the batch on a
+closed year is a no-op. Academic closing never erases debt or closes
+financial periods (E2E-verified). `year_end.manage` is admin/
+general_manager only. 99 unit tests + 200 e2e checks green.
+
+## Recommended next steps (post-Phase-5 polish)
+
+1. **Wire a real SMS/email gateway** to the existing outbox + MessageLog
+   queue (the production integration point for communications).
+2. **Document/file uploads with signed private access** (`fileUrl` fields
+   already exist) — unlocks real ID-card photos and document verification.
+3. **Custom roles UI + export jobs** (data model ready).
+4. **PostgreSQL migration** (schema is written for it) + production
+   deployment drill.
+5. **Grade-correction workflow**: approved reversal records referencing
+   published grades (published results stay immutable — by design).

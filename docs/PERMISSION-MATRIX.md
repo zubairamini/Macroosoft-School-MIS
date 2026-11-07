@@ -36,7 +36,7 @@ rendered in the UI at `#/settings/roles`.
 | `own` | the signed-in student's own record | `User.guardianId` self-link |
 | `guardian` | explicitly linked children | `StudentGuardian` rows with `contactRights` |
 
-## Matrix (default roles) — 13 roles × 46 permissions
+## Matrix (default roles) — 13 roles × 54 permissions
 
 Legend: `A`=all · `B`=branch (needs branchId) · `S`=section · `G`=guardian · `O`=own · `Y`=year · — = not granted.
 
@@ -80,6 +80,14 @@ Legend: `A`=all · `B`=branch (needs branchId) · `S`=section · `G`=guardian ·
 | expenses.manage | A | A | — | — | — | B | — | — | — | — | — | — | — |
 | payroll.view | A | A | B | — | — | B | — | — | — | B | — | — | B |
 | payroll.manage | A | A | — | — | — | B | — | — | — | — | — | — | — |
+| library.view | A | A | B | B | B | — | — | — | B | — | — | — | B |
+| library.manage | A | A | B | — | — | — | — | — | B | — | — | — | — |
+| announcements.view | A | A | B | B | B | B | B | B | B | B | O | G | B |
+| announcements.manage | A | A | B | B | — | — | — | — | — | — | — | — | — |
+| services.view | A | A | B | B | B | — | — | — | — | — | — | — | B |
+| services.manage | A | A | B | — | — | — | — | — | — | — | — | — | — |
+| reports.view | A | A | B | B | B | B | — | B | — | — | — | — | B |
+| year_end.manage | A | A | — | — | — | — | — | — | — | — | — | — | — |
 | settings.view | A | A | A | A | A | A | — | — | — | A | — | — | A |
 | settings.manage | A | — | — | — | — | — | — | — | — | — | — | — | — |
 | users.view | A | A | B | — | — | — | — | — | — | B | — | — | B |

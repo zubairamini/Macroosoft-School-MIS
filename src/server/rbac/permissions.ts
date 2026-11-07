@@ -53,6 +53,16 @@ export const PERMISSIONS = [
   "expenses.manage",
   "payroll.view",
   "payroll.manage",
+  // ── Phase 4: library, announcements, messages ────────────────
+  "library.view",
+  "library.manage",
+  "announcements.view",
+  "announcements.manage",
+  // ── Phase 5: services, reports, year-end rollover ────────────
+  "services.view",
+  "services.manage",
+  "reports.view",
+  "year_end.manage",
   "settings.view",
   "settings.manage",
   "users.view",
@@ -173,6 +183,16 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "expenses.manage", scope: "all" },
     { permission: "payroll.view", scope: "all" },
     { permission: "payroll.manage", scope: "all" },
+    // Phase 4 — system administration configures the library & comms too.
+    { permission: "library.view", scope: "all" },
+    { permission: "library.manage", scope: "all" },
+    { permission: "announcements.view", scope: "all" },
+    { permission: "announcements.manage", scope: "all" },
+    // Phase 5 — services, registry reports and the year-end rollover.
+    { permission: "services.view", scope: "all" },
+    { permission: "services.manage", scope: "all" },
+    { permission: "reports.view", scope: "all" },
+    { permission: "year_end.manage", scope: "all" },
     { permission: "settings.view", scope: "all" },
     { permission: "settings.manage", scope: "all" },
     { permission: "users.view", scope: "all" },
@@ -217,6 +237,17 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "expenses.manage", scope: "all" },
     { permission: "payroll.view", scope: "all" },
     { permission: "payroll.manage", scope: "all" },
+    // Phase 4 — library & communications authority across branches.
+    { permission: "library.view", scope: "all" },
+    { permission: "library.manage", scope: "all" },
+    { permission: "announcements.view", scope: "all" },
+    { permission: "announcements.manage", scope: "all" },
+    // Phase 5 — services, reports, and the year-end rollover (one of the
+    // only two roles allowed to close the academic year org-wide).
+    { permission: "services.view", scope: "all" },
+    { permission: "services.manage", scope: "all" },
+    { permission: "reports.view", scope: "all" },
+    { permission: "year_end.manage", scope: "all" },
     { permission: "settings.view", scope: "all" },
     { permission: "users.view", scope: "all" },
     { permission: "roles.view", scope: "all" },
@@ -249,6 +280,15 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "payments.view", scope: "branch" },
     { permission: "expenses.view", scope: "branch" },
     { permission: "payroll.view", scope: "branch" },
+    // Phase 4 — branch announcements & library oversight.
+    { permission: "library.view", scope: "branch" },
+    { permission: "library.manage", scope: "branch" },
+    { permission: "announcements.view", scope: "branch" },
+    { permission: "announcements.manage", scope: "branch" },
+    // Phase 5 — services & reports of the manager's OWN branch.
+    { permission: "services.view", scope: "branch" },
+    { permission: "services.manage", scope: "branch" },
+    { permission: "reports.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "users.view", scope: "branch" },
     { permission: "roles.view", scope: "all" },
@@ -277,6 +317,13 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "assessments.manage", scope: "branch" },
     { permission: "grades.enter", scope: "branch" },
     { permission: "grades.view", scope: "branch" },
+    // Phase 4 — branch announcements & library visibility.
+    { permission: "library.view", scope: "branch" },
+    { permission: "announcements.view", scope: "branch" },
+    { permission: "announcements.manage", scope: "branch" },
+    // Phase 5 — services & registry reports of the OWN branch.
+    { permission: "services.view", scope: "branch" },
+    { permission: "reports.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "roles.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
@@ -301,6 +348,12 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     // and print report cards from published results (no grade entry).
     { permission: "attendance.view", scope: "branch" },
     { permission: "grades.view", scope: "branch" },
+    // Phase 4 — registrars read branch announcements & the library.
+    { permission: "library.view", scope: "branch" },
+    { permission: "announcements.view", scope: "branch" },
+    // Phase 5 — registry reports of the OWN branch.
+    { permission: "services.view", scope: "branch" },
+    { permission: "reports.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "roles.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
@@ -324,6 +377,9 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "expenses.manage", scope: "branch" },
     { permission: "payroll.view", scope: "branch" },
     { permission: "payroll.manage", scope: "branch" },
+    // Phase 4/5 — announcements + finance registry reports.
+    { permission: "announcements.view", scope: "branch" },
+    { permission: "reports.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
     { permission: "search.use", scope: "branch" },
@@ -335,6 +391,8 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "invoices.view", scope: "branch" },
     { permission: "payments.view", scope: "branch" },
     { permission: "payments.collect", scope: "branch" },
+    // Phase 4 — branch announcements (staff audience).
+    { permission: "announcements.view", scope: "branch" },
     { permission: "search.use", scope: "branch" },
     { permission: "notifications.view", scope: "own" },
   ],
@@ -351,6 +409,9 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "assessments.view", scope: "section" },
     { permission: "grades.enter", scope: "section" },
     { permission: "grades.view", scope: "section" },
+    // Phase 4/5 — branch announcements; reports auto-narrow to own sections.
+    { permission: "announcements.view", scope: "branch" },
+    { permission: "reports.view", scope: "branch" },
     { permission: "roles.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
     { permission: "search.use", scope: "section" },
@@ -358,6 +419,11 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
   librarian: [
     { permission: "dashboard.view", scope: "all" },
     { permission: "students.view", scope: "branch" },
+    // Phase 4 — the librarian OWNS the branch library: catalog, copies,
+    // loans and fines (as linked invoices).
+    { permission: "library.view", scope: "branch" },
+    { permission: "library.manage", scope: "branch" },
+    { permission: "announcements.view", scope: "branch" },
     { permission: "search.use", scope: "branch" },
     { permission: "notifications.view", scope: "own" },
   ],
@@ -370,6 +436,8 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "users.view", scope: "branch" },
     { permission: "users.manage", scope: "branch" },
     { permission: "payroll.view", scope: "branch" },
+    // Phase 4 — branch announcements (staff audience).
+    { permission: "announcements.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
     { permission: "search.use", scope: "branch" },
@@ -380,6 +448,9 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     // Phase 2 — own results and own attendance (published only).
     { permission: "attendance.view", scope: "own" },
     { permission: "grades.view", scope: "own" },
+    // Phase 4 — announcements addressed to "all" audiences of the branch
+    // where the student is enrolled (narrowed by own-scope checks).
+    { permission: "announcements.view", scope: "own" },
     { permission: "notifications.view", scope: "own" },
   ],
   parent: [
@@ -391,6 +462,9 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "grades.view", scope: "guardian" },
     // Phase 3 — fee invoices of the guardian's own children.
     { permission: "invoices.view", scope: "guardian" },
+    // Phase 4 — announcements addressed to guardians ("all"/"guardians"
+    // audiences of the branches where their children study).
+    { permission: "announcements.view", scope: "guardian" },
     { permission: "notifications.view", scope: "own" },
   ],
   auditor: [
@@ -413,6 +487,12 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "payments.view", scope: "branch" },
     { permission: "expenses.view", scope: "branch" },
     { permission: "payroll.view", scope: "branch" },
+    // Phase 4/5 — read-only library, announcements, services & reports of
+    // the auditor's OWN branch.
+    { permission: "library.view", scope: "branch" },
+    { permission: "announcements.view", scope: "branch" },
+    { permission: "services.view", scope: "branch" },
+    { permission: "reports.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "users.view", scope: "branch" },
     { permission: "roles.view", scope: "all" },

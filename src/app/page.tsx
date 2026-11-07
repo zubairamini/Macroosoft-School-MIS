@@ -27,6 +27,13 @@ import { PaymentsView } from "@/features/finance/payments-view";
 import { ExpensesView } from "@/features/finance/expenses-view";
 import { PayrollView } from "@/features/finance/payroll-view";
 import { FinanceReportsView } from "@/features/finance/finance-reports-view";
+import { LibraryView } from "@/features/library/library-view";
+import { AnnouncementsView } from "@/features/communications/announcements-view";
+import { IdCardsView } from "@/features/cards/id-cards-view";
+import { PortalView } from "@/features/portal/portal-view";
+import { ServicesView } from "@/features/services/services-view";
+import { ReportsView } from "@/features/reports/reports-view";
+import { YearEndView } from "@/features/settings/year-end-view";
 import { RoadmapView } from "@/features/shared/roadmap-view";
 import { hasGrant } from "@/app-shell/shell";
 import { EmptyState, PageSkeleton } from "@/components/shared";
@@ -171,8 +178,24 @@ function AppRoutes() {
     } else {
       content = <NoPermissionView />;
     }
+  } else if (a === "library") {
+    content = hasGrant(me, "library.view") ? <LibraryView /> : <NoPermissionView />;
+  } else if (a === "announcements") {
+    content = hasGrant(me, "announcements.view") ? <AnnouncementsView /> : <NoPermissionView />;
+  } else if (a === "cards") {
+    content = hasGrant(me, "students.view") ? <IdCardsView /> : <NoPermissionView />;
+  } else if (a === "portal") {
+    content = <PortalView />;
+  } else if (a === "services") {
+    content = hasGrant(me, "services.view") ? <ServicesView /> : <NoPermissionView />;
+  } else if (a === "reports") {
+    content = hasGrant(me, "reports.view") ? <ReportsView /> : <NoPermissionView />;
   } else if (a === "settings") {
-    content = <SettingsView tab={b ?? "org"} />;
+    if (b === "year-end") {
+      content = hasGrant(me, "year_end.manage") ? <YearEndView /> : <NoPermissionView />;
+    } else {
+      content = <SettingsView tab={b ?? "org"} />;
+    }
   } else if (a === "roadmap") {
     content = <RoadmapView moduleKey={b ?? "reports"} />;
   } else {

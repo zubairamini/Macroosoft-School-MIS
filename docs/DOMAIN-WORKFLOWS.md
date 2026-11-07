@@ -182,3 +182,104 @@ grading ── publish (assessments.manage) ──▶ published (locked, policy 
   full policy version history.
 - **Year-end (P5):** repeat-safe promotion batches; academic closing never
   erases debt or closes financial periods.
+
+## 9. Phase 4 — Library invariants (implemented)
+
+```
+copy.status:  available ──checkout──▶ loaned ──return──▶ available
+                 │                       │
+                 │                       └──lost──▶ copy lost + fine invoice
+                 └──withdrawn (manual, available only)
+```
+
+- **One active loan per copy** — enforced by a CONDITIONAL
+  `updateMany({status: "available"}) → "loaned"` inside the checkout
+  transaction: a concurrent/duplicate checkout updates 0 rows → 409
+  «این نسخهٔ کتاب در حال حاضر امانت است». SQLite has no partial unique
+  index, so this transactional flip IS the constraint.
+- **Fines are finance records, not duplicated money:** a late return or a
+  lost copy issues a REAL Invoice (`periodKey = "fine:<loanId>"`) inside
+  the same transaction — payments, voiding, audit and reports come for
+  free from the Phase-3 module. On-time returns reject fines (400).
+- **Branch isolation:** catalog, copies and loans all carry `branchId`;
+  the borrower must hold an ACTIVE enrollment in the branch of the book.
+- **Numbering:** copy codes `B-<yearName>-<NNNN>` from the monotonic
+  Counter table inside the owning transaction.
+
+## 10. Phase 4 — Announcements & messages (implemented)
+
+```
+draft ──publish──▶ published ──unpublish──▶ draft
+         │
+         └─▶ invisible to non-managers until published
+```
+
+- Announcements target a branch (optionally ONE class section) and an
+  audience: `all | staff | guardians`.
+- **Read receipts:** one `AnnouncementRead` row per user per announcement
+  (DB unique) — `markRead` is idempotent (upsert, no error on repeat).
+- **Guardian visibility:** guardians see `all`/`guardians` announcements of
+  the branches where their children study, plus section-narrowed ones for
+  their children's sections. Students see `all`-audience announcements of
+  their own enrollment branch.
+- **Messages are recorded, never faked:** `POST /messages` writes
+  `MessageLog` rows with status `queued` plus an outbox event. No SMS/email
+  gateway is wired in this deployment — nothing is marked «sent» locally
+  (see KNOWN-LIMITATIONS).
+
+## 11. Phase 5 — Services invariants (implemented)
+
+- **Transport:** capacity enforced transactionally — adding a passenger
+  counts ACTIVE passengers inside the transaction; overflow → 409. A
+  student must be actively enrolled in the route's branch. Stopped
+  passengers are history (re-adding reactivates the same row).
+- **Inventory (انبار) is an append-only ledger:** every receive/issue
+  appends an `InventoryMovement` row and updates `item.quantity` with a
+  CONDITIONAL `updateMany({quantity: {gte: -delta}})` — issuing below zero
+  updates 0 rows → 409. Movements are never edited or deleted.
+- **Guest register:** arrival is an instant; checkout stamps `leftAt`;
+  records are closed, never deleted; double checkout → 400.
+- **Events:** `branchId = null` means org-wide (visible to every branch);
+  branch events are isolated. `endsOn ≥ startsOn` enforced by the DTO.
+
+## 12. Phase 5 — Year-end rollover (implemented)
+
+```
+preview ──▶ decide (overrides) ──▶ apply ──▶ year closed, next year current
+                                    │
+                                    └── re-apply = no-op (repeat-safe)
+```
+
+- **A decided batch, not a blind copy:** every active enrollment of the
+  closing year gets ONE `PromotionDecision`
+  (`promote | repeat | graduate | leave`, default: grade 12 → graduate,
+  everyone else → promote). Human overrides land via `/rollover/decide`
+  before applying. Promoting FROM grade 12 is rejected (400).
+- **Repeat-safe by construction:** `Enrollment`'s
+  `@@unique([studentId, academicYearId])` makes double enrollment
+  structurally impossible; decisions carry `appliedAt`, so re-running
+  `apply` skips finished rows. Applying an already-closed year returns
+  200 with zero new rows — never an error, never a duplicate.
+- **Debt survives:** apply touches ONLY enrollments, decisions, the year
+  row and (optionally) `isCurrent`. Invoices, payments, payroll and
+  expenses are not modified — verified by E2E (invoice count unchanged
+  across a rollover).
+- **Sections are not auto-created:** promoted enrollments land without a
+  class section; assigning sections is the new year's setup task.
+- **Permission:** `year_end.manage` — admin and general_manager only
+  (E2E: branch manager and cashier get 403).
+- **Year-name math is digit-style aware:** «۱۴۰۵» (Persian digits) rolls
+  to «۱۴۰۶», Latin "1405" rolls to "1406" (`yearNameAsNumber`).
+
+## 13. Phase 5 — Reports contract (implemented)
+
+- Reports return a GENERIC TABLE `{ title, columns[], rows[][], meta }`
+  with values pre-formatted in Dari (Jalali dates, Persian digits).
+- The same contract feeds the screen table, the print sheet
+  (`@media print` CSS) and the CSV export (`?format=csv`, UTF-8 BOM so
+  Excel reads Dari correctly; title + meta lead the file).
+- Scoping reuses the RBAC scope engine: branch roles see their branch,
+  teachers auto-narrow to their assigned sections (E2E-verified),
+  guardians/students have no `reports.view` by design.
+- «نا-ثبت ≠ حاضر»: attendance reports only count SUBMITTED sessions; a
+  student without a record row is listed as not-recorded — never present.

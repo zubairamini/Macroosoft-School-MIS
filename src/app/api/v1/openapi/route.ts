@@ -51,7 +51,7 @@ const spec = {
       "server-side. Errors use a consistent envelope with Dari messages. " +
       "State-changing requests require the x-maktabyar-client header or a " +
       "same-origin Origin header (CSRF defense).",
-    version: "1.2.0-phase3",
+    version: "1.4.0-phase5",
   },
   servers: [{ url: "/api/v1", description: "Same-origin API" }],
   tags: [
@@ -64,6 +64,12 @@ const spec = {
     { name: "assessments", description: "امتحانات، ثبت نمرات و انتشار نتایج (مرحلهٔ دوم)" },
     { name: "finance", description: "فیس‌ها، فاکتورها، رسیدهای پرداخت، مصارف و گزارش‌های مالی (مرحلهٔ سوم)" },
     { name: "payroll", description: "سیشن‌های معاشات ماهانه (مرحلهٔ سوم)" },
+    { name: "library", description: "کتابخانه: کاتلاگ، نسخه‌ها، امانت و جریمه‌ها (مرحلهٔ چهارم)" },
+    { name: "communications", description: "اعلانات، رسیدهای خواندن و صف پیام‌ها (مرحلهٔ چهارم)" },
+    { name: "portal", description: "پورتال یکپارچهٔ اولیا/شاگرد (مرحلهٔ چهارم)" },
+    { name: "services", description: "ترانسپورت، انبار، مهمان‌ها و رویدادها (مرحلهٔ پنجم)" },
+    { name: "reports", description: "ثبت‌نامه‌ها و گزارش‌های چاپی/CSV (مرحلهٔ پنجم)" },
+    { name: "rollover", description: "سال‌گذرانی تکرار-امن (مرحلهٔ پنجم)" },
     { name: "applications", description: "درخواست‌های شمولیت و چرخهٔ تصمیم" },
     { name: "students", description: "شاگردان، پروفایل و چرخهٔ حیات" },
     { name: "guardians", description: "اولیا" },
@@ -603,6 +609,213 @@ const spec = {
         summary: "گزارش مالی ماهانه — KPIها، سری ۶ ماهه، بدهکاران عمده",
         parameters: [{ name: "month", in: "query", schema: { type: "string" }, description: "کلید ماه شمسی مثلاً 1405-08" }],
         responses: { 200: okJson("Student") },
+      },
+    },
+    "/library/stats": {
+      get: { tags: ["library"], summary: "آمار کتابخانه (library.view) — تفکیک شعبه‌ای", responses: { 200: okJson("Student") } },
+    },
+    "/library/titles": {
+      get: {
+        tags: ["library"],
+        summary: "کاتلاگ کتاب‌ها (library.view)",
+        parameters: [
+          { name: "q", in: "query", schema: { type: "string" } },
+          { name: "subjectId", in: "query", schema: { type: "string" } },
+          { name: "isTextbook", in: "query", schema: { type: "string", enum: ["true", "false"] } },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: { tags: ["library"], summary: "ثبت کتاب (library.manage) — 409 عنوان تکراری شعبه", responses: { 200: okJson("Student"), 409: errorResponse("عنوان تکراری در شعبه") } },
+    },
+    "/library/titles/{id}": {
+      patch: { tags: ["library"], summary: "ویرایش/غیرفعال‌سازی کتاب (library.manage)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student") } },
+    },
+    "/library/copies": {
+      get: {
+        tags: ["library"],
+        summary: "نسخه‌های فیزیکی (library.view)",
+        parameters: [
+          { name: "titleId", in: "query", schema: { type: "string" } },
+          { name: "status", in: "query", schema: { type: "string", enum: ["available", "loaned", "lost", "withdrawn"] } },
+          { name: "q", in: "query", schema: { type: "string" }, description: "کوډ نسخه" },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: { tags: ["library"], summary: "افزودن نسخه‌ها به‌صورت گروهی با کوډ یکتا (library.manage)", responses: { 200: okJson("Student") } },
+    },
+    "/library/copies/{id}": {
+      patch: { tags: ["library"], summary: "کنارگذاشتن نسخهٔ موجود (library.manage)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 400: errorResponse("نسخهٔ امانت‌شده قابل تغییر نیست") } },
+    },
+    "/library/loans": {
+      get: {
+        tags: ["library"],
+        summary: "امانت‌ها (library.view) — شامل تأخیر",
+        parameters: [
+          { name: "status", in: "query", schema: { type: "string", enum: ["active", "returned", "lost"] } },
+          { name: "studentId", in: "query", schema: { type: "string" } },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: {
+        tags: ["library"],
+        summary: "ثبت امانت (library.manage) — فلیپ شرطی موجود→امانت‌شده",
+        responses: { 200: okJson("Student"), 409: errorResponse("نسخه در حال حاضر امانت است"), 400: errorResponse("شاگرد در شعبهٔ کتاب شمولیت ندارد") },
+      },
+    },
+    "/library/loans/{id}/return": {
+      post: {
+        tags: ["library"],
+        summary: "بازگشت کتاب — جریمهٔ تأخیر به‌صورت فاکتور مالی",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student"), 400: errorResponse("امانت به‌وقت است؛ جریمه مجاز نیست") },
+      },
+    },
+    "/library/loans/{id}/lost": {
+      post: {
+        tags: ["library"],
+        summary: "ثبت نسخهٔ گم‌شده با جریمه (فاکتور مرتبط)",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student") },
+      },
+    },
+    "/announcements": {
+      get: {
+        tags: ["communications"],
+        summary: "اعلانات دیدنی (announcements.view) — منتشرشده برای غیر مدیران",
+        parameters: [
+          { name: "status", in: "query", schema: { type: "string", enum: ["draft", "published"] } },
+          { name: "audience", in: "query", schema: { type: "string", enum: ["all", "staff", "guardians"] } },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: { tags: ["communications"], summary: "ایجاد اعلان به‌صورت پیش‌نویس (announcements.manage)", responses: { 200: okJson("Student") } },
+    },
+    "/announcements/{id}": {
+      patch: {
+        tags: ["communications"],
+        summary: "ویرایش پیش‌نویس یا action=publish|unpublish",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student"), 400: errorResponse("اعلان منتشرشده قابل ویرایش نیست") },
+      },
+    },
+    "/announcements/{id}/read": {
+      post: {
+        tags: ["communications"],
+        summary: "رسید خواندن (idempotent — یک ردیف به ازای هر کاربر)",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student") },
+      },
+    },
+    "/messages": {
+      get: { tags: ["communications"], summary: "صف پیام‌های SMS/ایمیل (announcements.manage)", responses: { 200: okList("Student") } },
+      post: {
+        tags: ["communications"],
+        summary: "ثبت پیام گروهی در صف (target=guardians|staff) — ارسال واقعی با درگاه تولیدی",
+        responses: { 200: okJson("Student"), 400: errorResponse("مخاطبی با شماره/ایمیل ثبت نیست") },
+      },
+    },
+    "/portal/overview": {
+      get: {
+        tags: ["portal"],
+        summary: "پورتال یکپارچهٔ اولیا/شاگرد — فرزندان، حاضری، نتایج، بدهی، اعلانات",
+        responses: { 200: okJson("Student") },
+      },
+    },
+    "/services/transport": {
+      get: { tags: ["services"], summary: "مسیرهای ترانسپورت (services.view) — تفکیک شعبه‌ای", responses: { 200: okList("Student") } },
+      post: { tags: ["services"], summary: "ایجاد مسیر (services.manage)", responses: { 200: okJson("Student"), 409: errorResponse("نام تکراری در شعبه") } },
+    },
+    "/services/transport/{id}": {
+      patch: { tags: ["services"], summary: "ویرایش/توقف مسیر (services.manage)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student") } },
+    },
+    "/services/transport/{id}/passengers": {
+      get: { tags: ["services"], summary: "مسافران (services.view)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okList("Student") } },
+      post: {
+        tags: ["services"],
+        summary: "افزودن مسافر — بررسی ظرفیت تراکنشی (services.manage)",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student"), 409: errorResponse("ظرفیت تکمیل / تکراری"), 400: errorResponse("شاگرد در شعبهٔ مسیر ثبت نیست") },
+      },
+    },
+    "/services/transport/passengers/{id}": {
+      patch: { tags: ["services"], summary: "توقف/فعال‌سازی مسافر", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student") } },
+    },
+    "/services/inventory": {
+      get: { tags: ["services"], summary: "اقلام انبار با وضعیت کم‌موجودی (services.view)", responses: { 200: okList("Student") } },
+      post: { tags: ["services"], summary: "ایجاد قلم با موجودی صفر (services.manage)", responses: { 200: okJson("Student"), 409: errorResponse("قلم تکراری در شعبه") } },
+    },
+    "/services/inventory/{id}/movements": {
+      get: { tags: ["services"], summary: "دفتر حرکات فقط-الحاقی (services.view)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okList("Student") } },
+      post: {
+        tags: ["services"],
+        summary: "ورود/صرف (delta مثبت/منفی) — موجودی منفی رد می‌شود (services.manage)",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student"), 409: errorResponse("موجودی کافی نیست") },
+      },
+    },
+    "/services/guests": {
+      get: {
+        tags: ["services"],
+        summary: "ثبت مهمان‌ها (services.view)",
+        parameters: [{ name: "inside", in: "query", schema: { type: "string", enum: ["true", "false"] } }],
+        responses: { 200: okList("Student") },
+      },
+      post: { tags: ["services"], summary: "ثبت ورود مهمان (services.manage)", responses: { 200: okJson("Student") } },
+    },
+    "/services/guests/{id}": {
+      patch: { tags: ["services"], summary: "ثبت خروج مهمان — دوباره 400", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 400: errorResponse("خروج قبلاً ثبت شده") } },
+    },
+    "/services/events": {
+      get: {
+        tags: ["services"],
+        summary: "تقویم رویدادها — رویدادهای سازمان‌سراسری برای همه شعبه‌ها",
+        parameters: [
+          { name: "from", in: "query", schema: { type: "string", format: "date" } },
+          { name: "kind", in: "query", schema: { type: "string", enum: ["meeting", "exam", "holiday", "ceremony", "other"] } },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: { tags: ["services"], summary: "ایجاد رویداد شعبه/سازمان‌سراسری (services.manage)", responses: { 200: okJson("Student"), 400: errorResponse("خاتمه قبل از شروع") } },
+    },
+    "/services/events/{id}": {
+      patch: { tags: ["services"], summary: "ویرایش رویداد", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student") } },
+    },
+    "/reports/{kind}": {
+      get: {
+        tags: ["reports"],
+        summary: "گزارش‌های ثبت‌نامه/حاضری/نتایج (reports.view) — جدول عمومی + CSV",
+        parameters: [
+          { name: "kind", in: "path", required: true, schema: { type: "string", enum: ["students", "attendance", "results"] } },
+          { name: "gradeLevelId", in: "query", schema: { type: "string" } },
+          { name: "classSectionId", in: "query", schema: { type: "string" } },
+          { name: "subjectId", in: "query", schema: { type: "string" } },
+          { name: "from", in: "query", schema: { type: "string", format: "date" } },
+          { name: "to", in: "query", schema: { type: "string", format: "date" } },
+          { name: "format", in: "query", schema: { type: "string", enum: ["json", "csv"], default: "json" }, description: "CSV با BOM برای اکسل" },
+        ],
+        responses: { 200: okJson("Student"), 404: errorResponse("گزارش ناشناخته") },
+      },
+    },
+    "/academic-years/{id}/rollover": {
+      get: {
+        tags: ["rollover"],
+        summary: "پیش‌نمایش سال‌گذرانی — تصمیم‌های پیش‌فرض/ذخیره‌شده (year_end.manage)",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student"), 403: errorResponse("فقط مدیر سیستم و مدیر عام") },
+      },
+      post: {
+        tags: ["rollover"],
+        summary: "اعمال دستهٔ ارتقا تکرار-امن + بستن سال — بدهی‌ها دست‌نخورده",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student"), 400: errorResponse("سال مقصد باید متفاوت/غیر بسته باشد") },
+      },
+    },
+    "/academic-years/{id}/rollover/decide": {
+      post: {
+        tags: ["rollover"],
+        summary: "ثبت/تغییر تصمیم‌های فردی قبل از اعمال (year_end.manage)",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student"), 400: errorResponse("ارتقا از صنف دوازدهم / تصمیم اعمال‌شده") },
       },
     },
     "/guardians": {

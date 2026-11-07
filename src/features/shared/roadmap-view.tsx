@@ -17,6 +17,16 @@ const PHASE_TITLES: Record<number, string> = {
   5: "مرحلهٔ پنجم — خدمات و تکمیل",
 };
 
+const STATUS_LINES: Array<{ label: string; done: boolean }> = [
+  { label: "امنیت ورود، اجازه‌ها و حیطه‌بندی شعبه‌ای دسترسی", done: true },
+  { label: "تنظیمات مکتب، سال تعلیمی، صنف‌ها و شعبه‌ها", done: true },
+  { label: "شمولیت شاگردان و پروفایل شاگرد", done: true },
+  { label: "حاضری، امتحانات، نتایج و برنامهٔ صنفی", done: true },
+  { label: "فیس، حسابداری، رسیدها و معاشات", done: true },
+  { label: "کتابخانه، اعلانات، کارت‌ها و پورتال‌ها", done: true },
+  { label: "خدمات (ترانسپورت/انبار/مهمان‌ها)، گزارش‌ها و سال‌گذرانی", done: true },
+];
+
 export function RoadmapView({ moduleKey }: { moduleKey: string }) {
   const info = ROADMAP_INFO[moduleKey] ?? {
     title: "بخش در دست ساخت",
@@ -51,12 +61,11 @@ export function RoadmapView({ moduleKey }: { moduleKey: string }) {
               <Layers className="h-4 w-4 text-primary" /> وضعیت فعلی سیستم
             </p>
             <ul className="space-y-1.5 text-xs leading-6 text-muted-foreground">
-              <li>✅ امنیت ورود، اجازه‌ها و حیطه‌بندی دسترسی (فعال)</li>
-              <li>✅ تنظیمات مکتب، سال تعلیمی، صنف‌ها و شعبه‌ها (فعال)</li>
-              <li>✅ شمولیت شاگردان و پروفایل شاگرد (فعال)</li>
-              <li>🔜 حاضری، امتحانات، نتایج (مرحلهٔ دوم)</li>
-              <li>🔜 فیس، حسابداری، معاشات (مرحلهٔ سوم)</li>
-              <li>🔜 کتابخانه، اسناد چاپی، پورتال‌ها (مرحلهٔ چهارم)</li>
+              {STATUS_LINES.map((s) => (
+                <li key={s.label} className={s.done ? "" : ""}>
+                  {s.done ? "✅" : "🔜"} {s.label}
+                </li>
+              ))}
             </ul>
           </div>
           <div className="flex justify-center">

@@ -84,6 +84,20 @@ model Organization {
   payments      Payment[]
   expenses      Expense[]
   payrollRuns   PayrollRun[]
+
+  // Phase 4 — library & communications
+  bookTitles    BookTitle[]
+  bookCopies    BookCopy[]
+  bookLoans     BookLoan[]
+  announcements Announcement[]
+  messageLogs   MessageLog[]
+
+  // Phase 5 — services & year-end
+  transportRoutes TransportRoute[]
+  inventoryItems  InventoryItem[]
+  guestVisits     GuestVisit[]
+  schoolEvents    SchoolEvent[]
+  promotionDecisions PromotionDecision[]
 }
 
 model Branch {
@@ -112,6 +126,19 @@ model Branch {
   expenses       Expense[]
   payrollRuns    PayrollRun[]
 
+  // Phase 4 — library & communications rows of this branch
+  bookTitles     BookTitle[]
+  bookCopies     BookCopy[]
+  bookLoans      BookLoan[]
+  announcements  Announcement[]
+  messageLogs    MessageLog[]
+
+  // Phase 5 — services of this branch
+  transportRoutes TransportRoute[]
+  inventoryItems  InventoryItem[]
+  guestVisits     GuestVisit[]
+  schoolEvents    SchoolEvent[]
+
   @@unique([orgId, code])
   @@index([orgId])
 }
@@ -136,6 +163,8 @@ model AcademicYear {
   enrollments    Enrollment[]
   teachingAssignments TeachingAssignment[]
   assessments    Assessment[]
+  // Phase 5 — year-end promotion decisions taken on this year
+  promotionDecisions PromotionDecision[]
 
   @@unique([orgId, name])
   @@index([orgId, isCurrent])
@@ -167,6 +196,9 @@ model GradeLevel {
   classSections ClassSection[]
   applications  Application[]
   enrollments   Enrollment[]
+  // Phase 5 — year-end promotion decisions (source and target grade)
+  promotionSources PromotionDecision[] @relation("PromotionSource")
+  promotionTargets PromotionDecision[] @relation("PromotionTarget")
 
   @@unique([orgId, level])
 }
@@ -213,6 +245,8 @@ model Subject {
   timetableSlots      TimetableSlot[]
   attendanceSessions  AttendanceSession[]
   assessments         Assessment[]
+  // Phase 4 — library titles catalogued under this subject
+  bookTitles          BookTitle[]
 
   @@unique([orgId, code])
 }
@@ -241,6 +275,8 @@ model ClassSection {
   timetableSlots    TimetableSlot[]
   attendanceSessions AttendanceSession[]
   assessments       Assessment[]
+  // Phase 4 — announcements narrowed to this section
+  announcements     Announcement[]
 
   @@unique([academicYearId, gradeLevelId, label])
   @@index([branchId])
@@ -272,6 +308,9 @@ model User {
   notifications Notification[]
   // Inverse of StaffMember.userId — the staff record this account is linked to
   staffMember StaffMember? @relation("StaffPortalUser")
+  // Phase 4 — announcement read receipts & sent message logs
+  announcementReads AnnouncementRead[]
+  sentMessages       MessageLog[]
 
   @@index([guardianId])
 }
@@ -429,6 +468,10 @@ model Student {
   invoices    Invoice[]
   payments    Payment[]
   discounts   Discount[]
+  // Phase 4/5 — library loans & transport passengers
+  bookLoans        BookLoan[]
+  transportPassengers TransportPassenger[]
+  promotionDecisions  PromotionDecision[]
 
   @@index([orgId, status])
 }
@@ -854,6 +897,9 @@ model Invoice {
 
   payments       Payment[]
 
+  // Phase 4 — library fines issued as invoices (periodKey "fine:<loanId>")
+  fineLoans      BookLoan[]
+
   @@index([branchId, status])
   @@index([academicYearId, periodKey])
   @@index([studentId])
@@ -964,4 +1010,342 @@ model PayrollItem {
 
   @@unique([payrollRunId, staffId])
   @@index([staffId])
+}
+
+// ── Library — Phase 4 ─────────────────────────────────────────────────────
+//
+// TITLE vs COPY: BookTitle is the catalog entry; BookCopy is the physical
+// item that can be loaned. BRANCH ISOLATION: catalog and copies belong to a
+// concrete branch. LOAN INVARIANT: at most one ACTIVE loan per copy
+// (enforced transactionally; SQLite cannot express a partial unique index).
+// FINES: lost/late charges are issued as linked Invoices (periodKey
+// "fine:<loanId>") — money stays in the finance module, never duplicated.
+
+model BookTitle {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  title     String
+  author    String?
+  publisher String?
+  subjectId String?
+  subject   Subject? @relation(fields: [subjectId], references: [id])
+  // Grades the title serves (JSON int array, e.g. "[4,5,6]")
+  gradeLevels String @default("[]") // JSON
+  // true = textbook distributed via the class; false = library loan title
+  isTextbook Boolean @default(false)
+  isActive  Boolean  @default(true)
+  note      String?
+  createdById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  copies    BookCopy[]
+
+  @@unique([branchId, title])
+  @@index([branchId, isActive])
+}
+
+model BookCopy {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  titleId   String
+  title     BookTitle @relation(fields: [titleId], references: [id])
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  // Copy barcode, unique org-wide: "B-1405-0007"
+  copyCode  String   @unique
+  // "available" | "loaned" | "lost" | "withdrawn"
+  status    String   @default("available")
+  // Free-text condition note, e.g. «نو» / «کم‌استعمال»
+  condition String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loans     BookLoan[]
+
+  @@index([titleId])
+  @@index([branchId, status])
+}
+
+model BookLoan {
+  id          String   @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  copyId      String
+  copy        BookCopy @relation(fields: [copyId], references: [id])
+  studentId   String
+  student     Student @relation(fields: [studentId], references: [id])
+  branchId    String
+  branch      Branch  @relation(fields: [branchId], references: [id])
+  // date-only ISO (Asia/Kabul)
+  loanedOn    String
+  dueOn      String
+  returnedOn String?
+  // "active" | "returned" | "lost"
+  status      String   @default("active")
+  // Fine issued when lost/late — stored in diram, 0 = no fine
+  fineDiram   Int      @default(0)
+  // Linked finance invoice for the fine (periodKey "fine:<loanId>")
+  fineInvoiceId String?
+  fineInvoice   Invoice? @relation(fields: [fineInvoiceId], references: [id])
+  note        String?
+  loanedById  String?
+  returnedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // INVARIANT: one ACTIVE loan per copy — checked transactionally
+  // (copy.status "loaned" flips in the same transaction).
+  @@index([copyId, status])
+  @@index([studentId, status])
+  @@index([branchId, status])
+}
+
+// ── Communications — Phase 4 ──────────────────────────────────────────────
+//
+// Announcements target a branch (optionally one class section) and an
+// audience ("all" | "staff" | "guardians"). Read receipts are per-user.
+// Messages (SMS/email) are RECORDED here and queued via the outbox; no real
+// gateway is wired in the sandbox (see docs/KNOWN-LIMITATIONS.md).
+
+model Announcement {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  // Optional narrowing to ONE class section (guardians of that section only)
+  classSectionId String?
+  classSection   ClassSection? @relation(fields: [classSectionId], references: [id])
+  // "all" | "staff" | "guardians"
+  audience  String   @default("all")
+  title     String
+  body      String
+  // "draft" | "published"
+  status    String   @default("draft")
+  publishedById String?
+  publishedAt   DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reads      AnnouncementRead[]
+
+  @@index([branchId, status])
+  @@index([classSectionId])
+}
+
+model AnnouncementRead {
+  id             String   @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  readAt         DateTime @default(now())
+
+  // INVARIANT: one read receipt per user per announcement.
+  @@unique([announcementId, userId])
+  @@index([userId])
+}
+
+model MessageLog {
+  id          String   @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  // null = org-wide broadcast
+  branchId    String?
+  branch      Branch?  @relation(fields: [branchId], references: [id])
+  // "sms" | "email"
+  channel     String
+  recipient   String   // phone number / email address
+  subject     String?
+  body        String
+  // "queued" | "sent" | "failed" — a worker drains the outbox and updates
+  status      String   @default("queued")
+  error       String?
+  // Optional origin, e.g. ("Announcement", announcementId)
+  relatedType String?
+  relatedId   String?
+  sentById    String?
+  sentBy      User?    @relation(fields: [sentById], references: [id])
+  createdAt   DateTime @default(now())
+  sentAt      DateTime?
+
+  @@index([branchId, createdAt])
+  @@index([status])
+}
+
+// ── School services — Phase 5 ─────────────────────────────────────────────
+//
+// Transport, inventory (انبار), guest register and the event calendar.
+// BRANCH ISOLATION: every service row belongs to a concrete branch
+// (SchoolEvent.branchId null = org-wide event visible to every branch).
+
+model TransportRoute {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  name      String   // «سرویس کارتِ نو — مسیر اول»
+  driverName String?
+  vehicle   String?  // e.g. «کورولا سفید — 04 Kabul 1234»
+  capacity  Int      @default(20)
+  // Monthly transport fee in diram (100 diram = 1 AFN)
+  monthlyFeeDiram Int @default(0)
+  // JSON string array of stop names
+  stops     String   @default("[]")
+  isActive  Boolean  @default(true)
+  note      String?
+  createdById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  passengers TransportPassenger[]
+
+  @@unique([branchId, name])
+  @@index([branchId, isActive])
+}
+
+model TransportPassenger {
+  id        String   @id @default(cuid())
+  routeId   String
+  route     TransportRoute @relation(fields: [routeId], references: [id])
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id])
+  stopName  String?
+  // "active" | "stopped"
+  status    String   @default("active")
+  stoppedAt DateTime?
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([routeId, studentId])
+  @@index([studentId, status])
+}
+
+model InventoryItem {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  name      String   // «تخته‌سپیده»
+  // display unit: «عدد» / «بسته» / «لیتر» / «کیلو»
+  unit      String   @default("عدد")
+  quantity  Int      @default(0)
+  minQuantity Int    @default(0)
+  isActive  Boolean  @default(true)
+  note      String?
+  createdById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movements InventoryMovement[]
+
+  @@unique([branchId, name])
+  @@index([branchId, isActive])
+}
+
+/// Append-only stock ledger: every receive/issue is a signed movement row.
+/// item.quantity is maintained in the same transaction; the ledger itself is
+/// never rewritten (no deletes, no updates — corrections are new rows).
+model InventoryMovement {
+  id        String   @id @default(cuid())
+  itemId    String
+  item      InventoryItem @relation(fields: [itemId], references: [id])
+  // signed: positive = receive (ورود), negative = issue (صرف)
+  delta     Int
+  reason    String
+  byId      String?
+  at        DateTime @default(now())
+
+  @@index([itemId, at])
+}
+
+/// Guest register (ثبت مهمان‌ها) — who entered the school, when, why.
+model GuestVisit {
+  id          String   @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  branchId    String
+  branch      Branch   @relation(fields: [branchId], references: [id])
+  fullName    String
+  purpose     String
+  hostName    String?  // staff member visited, free text
+  idNumber    String?  // tazkira / visitor card number
+  visitorCount Int     @default(1)
+  // instant of arrival / departure, stored UTC
+  arrivedAt   DateTime
+  leftAt      DateTime?
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([branchId, arrivedAt])
+}
+
+/// Event calendar (تقویم رویدادها): exams, meetings, ceremonies, holidays.
+model SchoolEvent {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  // null = org-wide event (visible in every branch)
+  branchId  String?
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+  title     String
+  // "meeting" | "exam" | "holiday" | "ceremony" | "other"
+  kind      String   @default("other")
+  // date-only ISO
+  startsOn  String
+  endsOn    String?
+  note      String?
+  createdById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId, startsOn])
+  @@index([startsOn])
+}
+
+// ── Year-end rollover — Phase 5 ───────────────────────────────────────────
+//
+// PROMOTION IS A DECIDED BATCH: for the closing year, every active student
+// gets one decision (promote / repeat / graduate / leave). Applying the
+// batch is REPEAT-SAFE: @@unique([studentId, academicYearId]) on Enrollment
+// makes double enrollment structurally impossible, and decisions carry
+// appliedAt so a re-run skips finished rows. Academic closing NEVER erases
+// debt or closes financial periods (invoices/payments belong to their own
+// year-bound records and stay untouched).
+
+model PromotionDecision {
+  id             String   @id @default(cuid())
+  orgId          String
+  org            Organization @relation(fields: [orgId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  studentId      String
+  student        Student @relation(fields: [studentId], references: [id])
+  fromGradeLevelId String
+  fromGradeLevel   GradeLevel @relation("PromotionSource", fields: [fromGradeLevelId], references: [id])
+  // target grade for promote/repeat; null for graduate/leave
+  toGradeLevelId   String?
+  toGradeLevel     GradeLevel? @relation("PromotionTarget", fields: [toGradeLevelId], references: [id])
+  // "promote" | "repeat" | "graduate" | "leave"
+  decision        String
+  decidedById     String?
+  decidedAt       DateTime @default(now())
+  appliedAt       DateTime?
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // INVARIANT: one decision per student per closing year.
+  @@unique([academicYearId, studentId])
+  @@index([academicYearId, decision])
 }

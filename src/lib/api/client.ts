@@ -80,6 +80,32 @@ export const api = {
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  /** Raw text (CSV export) with the same auth/CSRF headers as JSON calls. */
+  getRaw: async (path: string): Promise<string> => {
+    let branchHeader: Record<string, string> = {};
+    if (typeof window !== "undefined") {
+      const b = window.localStorage.getItem("maktabyar:branch");
+      if (b && b !== "all") branchHeader = { "x-maktabyar-branch": b };
+    }
+    let res: Response;
+    try {
+      res = await fetch(`/api/v1${path}`, {
+        headers: { "x-maktabyar-client": "1", ...branchHeader },
+        credentials: "same-origin",
+      });
+    } catch {
+      throw new ApiClientError(0, "NETWORK", "ارتباط با سرور برقرار نشد. اتصال انترنت را بررسی کنید.");
+    }
+    if (!res.ok) {
+      let message = "خطای غیرمنتظره رخ داد.";
+      try {
+        const j = (await res.json()) as Envelope<unknown>;
+        message = j.error?.message ?? message;
+      } catch { /* not JSON */ }
+      throw new ApiClientError(res.status, "UNKNOWN", message);
+    }
+    return res.text();
+  },
 };
 
 // ── Shared DTO types (mirror of server DTOs) ────────────────────────────────
@@ -672,4 +698,256 @@ export interface FinanceReportsDto {
   payroll: { totalDiram: number; runsCount: number };
   series: Array<{ key: string; label: string; incomeDiram: number; expenseDiram: number }>;
   topDebtors: Array<{ studentId: string; studentNumber: string; name: string; balance: number; branchName: string }>;
+}
+
+// ── Phase 4: library, announcements, messages, portal ──────────────────────
+
+export interface BookTitleDto {
+  id: string;
+  branchId: string;
+  title: string;
+  author: string | null;
+  publisher: string | null;
+  subjectId: string | null;
+  subjectName: string | null;
+  gradeLevels: number[];
+  isTextbook: boolean;
+  isActive: boolean;
+  note: string | null;
+  copyCount: number;
+  createdAt: string;
+}
+
+export interface BookCopyDto {
+  id: string;
+  titleId: string;
+  bookTitle: string;
+  branchId: string;
+  copyCode: string;
+  status: string;
+  statusLabel: string;
+  condition: string | null;
+  createdAt: string;
+}
+
+export interface BookLoanDto {
+  id: string;
+  copyId: string;
+  copyCode: string;
+  bookTitle: string;
+  studentId: string;
+  studentNumber: string;
+  studentName: string;
+  fatherName: string;
+  branchId: string;
+  loanedOn: string;
+  dueOn: string;
+  returnedOn: string | null;
+  status: string;
+  statusLabel: string;
+  fineDiram: number;
+  note: string | null;
+  isOverdue: boolean;
+  createdAt: string;
+}
+
+export interface LibraryStatsDto {
+  titleCount: number;
+  copyCount: number;
+  availableCount: number;
+  activeLoans: number;
+  overdueLoans: number;
+}
+
+export interface AnnouncementDto {
+  id: string;
+  branchId: string;
+  branchName: string | null;
+  classSectionId: string | null;
+  sectionLabel: string | null;
+  audience: string;
+  audienceLabel: string;
+  title: string;
+  body: string;
+  status: string;
+  statusLabel: string;
+  publishedAt: string | null;
+  readCount: number;
+  readByMe: boolean;
+  createdAt: string;
+}
+
+export interface MessageLogDto {
+  id: string;
+  branchId: string | null;
+  channel: string;
+  channelLabel: string;
+  recipient: string;
+  subject: string | null;
+  body: string;
+  status: string;
+  statusLabel: string;
+  error: string | null;
+  relatedType: string | null;
+  relatedId: string | null;
+  createdAt: string;
+  sentAt: string | null;
+}
+
+export interface PortalChildDto {
+  id: string;
+  studentNumber: string;
+  name: string;
+  fatherName: string;
+  status: string;
+  yearName: string | null;
+  gradeName: string | null;
+  sectionLabel: string | null;
+  branchId: string | null;
+  branchName: string | null;
+  attendance: {
+    sessions: number;
+    present: number;
+    absent: number;
+    late: number;
+    excused: number;
+    notRecorded: number;
+  };
+  grades: Array<{ subjectId: string; subjectName: string; averagePercent: number }>;
+  outstandingBalanceDiram: number;
+}
+
+export interface PortalOverviewDto {
+  isGuardian: boolean;
+  isStudent: boolean;
+  orgName: string;
+  yearName: string | null;
+  children: PortalChildDto[];
+  announcements: Array<{
+    id: string;
+    title: string;
+    body: string;
+    publishedAt: string | null;
+    readByMe: boolean;
+  }>;
+}
+
+// ── Phase 5: services, reports, year-end ───────────────────────────────────
+
+export interface TransportRouteDto {
+  id: string;
+  branchId: string;
+  name: string;
+  driverName: string | null;
+  vehicle: string | null;
+  capacity: number;
+  monthlyFeeDiram: number;
+  stops: string[];
+  isActive: boolean;
+  note: string | null;
+  activePassengers: number;
+}
+
+export interface TransportPassengerDto {
+  id: string;
+  routeId: string;
+  routeName: string;
+  studentId: string;
+  studentNumber: string;
+  studentName: string;
+  fatherName: string;
+  stopName: string | null;
+  status: string;
+  statusLabel: string;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface InventoryItemDto {
+  id: string;
+  branchId: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  minQuantity: number;
+  isLow: boolean;
+  isActive: boolean;
+  note: string | null;
+}
+
+export interface InventoryMovementDto {
+  id: string;
+  itemId: string;
+  delta: number;
+  reason: string;
+  at: string;
+}
+
+export interface GuestVisitDto {
+  id: string;
+  branchId: string;
+  fullName: string;
+  purpose: string;
+  hostName: string | null;
+  idNumber: string | null;
+  visitorCount: number;
+  arrivedAt: string;
+  leftAt: string | null;
+  isInside: boolean;
+  note: string | null;
+}
+
+export interface SchoolEventDto {
+  id: string;
+  branchId: string | null;
+  title: string;
+  kind: string;
+  kindLabel: string;
+  startsOn: string;
+  endsOn: string | null;
+  note: string | null;
+}
+
+export interface ReportTableDto {
+  kind: string;
+  title: string;
+  columns: Array<{ key: string; label: string }>;
+  rows: string[][];
+  meta: Record<string, string>;
+}
+
+export interface RolloverPreviewRowDto {
+  studentId: string;
+  studentNumber: string;
+  studentName: string;
+  fatherName: string;
+  gradeLevelId: string;
+  gradeLevel: number;
+  gradeName: string;
+  sectionLabel: string | null;
+  branchId: string | null;
+  defaultDecision: string;
+  savedDecision: string | null;
+  savedNote: string | null;
+  appliedAt: string | null;
+}
+
+export interface RolloverPreviewDto {
+  year: { id: string; name: string; status: string; isCurrent: boolean; activeEnrollments: number };
+  suggestedNextYearName: string;
+  nextYears: Array<{ id: string; name: string; status: string; isCurrent: boolean; startDate: string; endDate: string }>;
+  counts: { promote: number; repeat: number; graduate: number; leave: number; pending: number; applied: number };
+  rows: RolloverPreviewRowDto[];
+  statusInfo: { yearId: string; yearName: string; status: string; total: number; applied: number; pending: number };
+}
+
+export interface RolloverApplyResultDto {
+  fromYear: string;
+  toYear: string;
+  promoted: number;
+  repeated: number;
+  graduated: number;
+  left: number;
+  skipped: number;
+  closed: boolean;
 }

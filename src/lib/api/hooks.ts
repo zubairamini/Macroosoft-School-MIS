@@ -14,6 +14,11 @@ import type {
   AttendanceSummaryDto, AssessmentDto, AssessmentDetailDto, ReportCardDto,
   FeeStructureDto, DiscountDto, InvoiceDto, PaymentDto, ExpenseDto,
   PayrollRunDto, FinanceReportsDto,
+  BookTitleDto, BookCopyDto, BookLoanDto, LibraryStatsDto,
+  AnnouncementDto, MessageLogDto, PortalOverviewDto,
+  TransportRouteDto, TransportPassengerDto, InventoryItemDto, InventoryMovementDto,
+  GuestVisitDto, SchoolEventDto, ReportTableDto,
+  RolloverPreviewDto, RolloverApplyResultDto,
 } from "./client";
 
 function qs(params: Record<string, string | number | undefined | null>): string {
@@ -165,7 +170,7 @@ export function useCreateSubject() {
 // ── Students ────────────────────────────────────────────────────────────────
 
 export function useStudents(filters: {
-  q?: string; status?: string; gradeLevelId?: string; page?: number; pageSize?: number;
+  q?: string; status?: string; gradeLevelId?: string; classSectionId?: string; academicYearId?: string; page?: number; pageSize?: number;
 }) {
   return useQuery({
     queryKey: ["students", filters],
@@ -840,6 +845,362 @@ export function useFinanceReports(month?: string) {
   return useQuery({
     queryKey: ["finance-reports", month ?? ""],
     queryFn: async () => (await api.get<FinanceReportsDto>(`/finance/reports${qs({ month })}`)).data,
+  });
+}
+
+// ── Phase 4: library ────────────────────────────────────────────────────────
+
+export function useLibraryStats() {
+  return useQuery({
+    queryKey: ["library-stats"],
+    queryFn: async () => (await api.get<LibraryStatsDto>("/library/stats")).data,
+  });
+}
+
+export function useBookTitles(filters: { q?: string; subjectId?: string; isTextbook?: string } = {}) {
+  return useQuery({
+    queryKey: ["library-titles", filters.q ?? "", filters.subjectId ?? "", filters.isTextbook ?? ""],
+    queryFn: async () => (await api.get<BookTitleDto[]>(`/library/titles${qs(filters)}`)).data,
+  });
+}
+
+export function useCreateBookTitle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<BookTitleDto>("/library/titles", vars)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["library-titles"] });
+      qc.invalidateQueries({ queryKey: ["library-stats"] });
+    },
+  });
+}
+
+export function useUpdateBookTitle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string } & Record<string, unknown>) =>
+      (await api.patch<BookTitleDto>(`/library/titles/${vars.id}`, vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["library-titles"] }),
+  });
+}
+
+export function useBookCopies(filters: { titleId?: string; status?: string; q?: string } = {}) {
+  return useQuery({
+    queryKey: ["library-copies", filters.titleId ?? "", filters.status ?? "", filters.q ?? ""],
+    queryFn: async () => (await api.get<BookCopyDto[]>(`/library/copies${qs(filters)}`)).data,
+  });
+}
+
+export function useAddBookCopies() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { titleId: string; count: number; condition?: string | null }) =>
+      (await api.post<{ createdCount: number; codes: string[] }>("/library/copies", vars)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["library-copies"] });
+      qc.invalidateQueries({ queryKey: ["library-titles"] });
+      qc.invalidateQueries({ queryKey: ["library-stats"] });
+    },
+  });
+}
+
+export function useBookLoans(filters: { status?: string; studentId?: string; q?: string } = {}) {
+  return useQuery({
+    queryKey: ["library-loans", filters.status ?? "", filters.studentId ?? "", filters.q ?? ""],
+    queryFn: async () => (await api.get<BookLoanDto[]>(`/library/loans${qs(filters)}`)).data,
+  });
+}
+
+export function useCheckoutLoan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { copyId: string; studentId: string; dueOn: string; note?: string | null }) =>
+      (await api.post<BookLoanDto>("/library/loans", vars)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["library-loans"] });
+      qc.invalidateQueries({ queryKey: ["library-copies"] });
+      qc.invalidateQueries({ queryKey: ["library-stats"] });
+    },
+  });
+}
+
+export function useReturnLoan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; fineDiram?: number; note?: string | null }) =>
+      (await api.post<BookLoanDto>(`/library/loans/${vars.id}/return`, { fineDiram: vars.fineDiram ?? 0, note: vars.note ?? null })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["library-loans"] });
+      qc.invalidateQueries({ queryKey: ["library-copies"] });
+      qc.invalidateQueries({ queryKey: ["library-stats"] });
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+    },
+  });
+}
+
+export function useMarkLoanLost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; fineDiram: number; note?: string | null }) =>
+      (await api.post<BookLoanDto>(`/library/loans/${vars.id}/lost`, { fineDiram: vars.fineDiram, note: vars.note ?? null })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["library-loans"] });
+      qc.invalidateQueries({ queryKey: ["library-copies"] });
+      qc.invalidateQueries({ queryKey: ["library-stats"] });
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+    },
+  });
+}
+
+// ── Phase 4: announcements & messages ───────────────────────────────────────
+
+export function useAnnouncements(filters: { status?: string; audience?: string } = {}) {
+  return useQuery({
+    queryKey: ["announcements", filters.status ?? "", filters.audience ?? ""],
+    queryFn: async () => (await api.get<AnnouncementDto[]>(`/announcements${qs(filters)}`)).data,
+  });
+}
+
+export function useCreateAnnouncement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<{ id: string; status: string }>("/announcements", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["announcements"] }),
+  });
+}
+
+export function useAnnouncementAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; action: "publish" | "unpublish" } | { id: string } & Record<string, unknown>) =>
+      (await api.patch<{ ok?: boolean; id?: string; status?: string }>(`/announcements/${vars.id}`, vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["announcements"] }),
+  });
+}
+
+export function useMarkAnnouncementRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post<{ ok: boolean }>(`/announcements/${id}/read`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["announcements"] }),
+  });
+}
+
+export function useMessageLog(filters: { channel?: string; status?: string } = {}) {
+  return useQuery({
+    queryKey: ["messages", filters.channel ?? "", filters.status ?? ""],
+    queryFn: async () => (await api.get<MessageLogDto[]>(`/messages${qs(filters)}`)).data,
+  });
+}
+
+export function useSendMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<{ queuedCount: number; channel: string }>("/messages", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["messages"] }),
+  });
+}
+
+// ── Phase 4: guardian/student portal ────────────────────────────────────────
+
+export function usePortalOverview() {
+  return useQuery({
+    queryKey: ["portal-overview"],
+    queryFn: async () => (await api.get<PortalOverviewDto>("/portal/overview")).data,
+  });
+}
+
+// ── Phase 5: services ───────────────────────────────────────────────────────
+
+export function useTransportRoutes() {
+  return useQuery({
+    queryKey: ["transport-routes"],
+    queryFn: async () => (await api.get<TransportRouteDto[]>("/services/transport")).data,
+  });
+}
+
+export function useCreateTransportRoute() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<TransportRouteDto>("/services/transport", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["transport-routes"] }),
+  });
+}
+
+export function useUpdateTransportRoute() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string } & Record<string, unknown>) =>
+      (await api.patch<TransportRouteDto>(`/services/transport/${vars.id}`, vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["transport-routes"] }),
+  });
+}
+
+export function useTransportPassengers(filters: { routeId?: string; status?: string } = {}) {
+  return useQuery({
+    queryKey: ["transport-passengers", filters.routeId ?? "", filters.status ?? ""],
+    queryFn: async () => (await api.get<TransportPassengerDto[]>(`/services/transport/passengers${qs(filters)}`)).data,
+  });
+}
+
+export function useAddTransportPassenger() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { routeId: string; studentId: string; stopName?: string | null; note?: string | null }) =>
+      (await api.post<TransportPassengerDto>(`/services/transport/${vars.routeId}/passengers`, vars)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transport-passengers"] });
+      qc.invalidateQueries({ queryKey: ["transport-routes"] });
+    },
+  });
+}
+
+export function useUpdateTransportPassenger() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; status: "active" | "stopped"; stopName?: string | null }) =>
+      (await api.patch<TransportPassengerDto>(`/services/transport/passengers/${vars.id}`, vars)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transport-passengers"] });
+      qc.invalidateQueries({ queryKey: ["transport-routes"] });
+    },
+  });
+}
+
+export function useInventoryItems() {
+  return useQuery({
+    queryKey: ["inventory-items"],
+    queryFn: async () => (await api.get<InventoryItemDto[]>("/services/inventory")).data,
+  });
+}
+
+export function useCreateInventoryItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<InventoryItemDto>("/services/inventory", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory-items"] }),
+  });
+}
+
+export function useInventoryMovements(itemId: string | null) {
+  return useQuery({
+    queryKey: ["inventory-movements", itemId ?? ""],
+    queryFn: async () => (await api.get<InventoryMovementDto[]>(`/services/inventory/${itemId}/movements`)).data,
+    enabled: Boolean(itemId),
+  });
+}
+
+export function useRecordInventoryMovement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { itemId: string; delta: number; reason: string }) =>
+      (await api.post<{ item: InventoryItemDto }>(`/services/inventory/${vars.itemId}/movements`, {
+        delta: vars.delta,
+        reason: vars.reason,
+      })).data,
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["inventory-items"] });
+      qc.invalidateQueries({ queryKey: ["inventory-movements", vars.itemId] });
+    },
+  });
+}
+
+export function useGuestVisits(filters: { inside?: string } = {}) {
+  return useQuery({
+    queryKey: ["guests", filters.inside ?? ""],
+    queryFn: async () => (await api.get<GuestVisitDto[]>(`/services/guests${qs(filters)}`)).data,
+  });
+}
+
+export function useCreateGuestVisit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<GuestVisitDto>("/services/guests", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["guests"] }),
+  });
+}
+
+export function useCheckoutGuest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; note?: string | null }) =>
+      (await api.patch<GuestVisitDto>(`/services/guests/${vars.id}`, { note: vars.note ?? null })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["guests"] }),
+  });
+}
+
+export function useSchoolEvents() {
+  return useQuery({
+    queryKey: ["school-events"],
+    queryFn: async () => (await api.get<SchoolEventDto[]>("/services/events")).data,
+  });
+}
+
+export function useCreateSchoolEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<SchoolEventDto>("/services/events", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["school-events"] }),
+  });
+}
+
+// ── Phase 5: reports ────────────────────────────────────────────────────────
+
+export function useReport(kind: string | null, filters: {
+  gradeLevelId?: string; classSectionId?: string; status?: string;
+  from?: string; to?: string; subjectId?: string;
+} = {}) {
+  return useQuery({
+    queryKey: ["report", kind ?? "", JSON.stringify(filters)],
+    queryFn: async () =>
+      (await api.get<ReportTableDto>(`/reports/${kind}${qs(filters)}`)).data,
+    enabled: Boolean(kind),
+  });
+}
+
+// ── Phase 5: year-end rollover ──────────────────────────────────────────────
+
+export function useRolloverPreview(yearId: string | null) {
+  return useQuery({
+    queryKey: ["rollover-preview", yearId ?? ""],
+    queryFn: async () => (await api.get<RolloverPreviewDto>(`/academic-years/${yearId}/rollover`)).data,
+    enabled: Boolean(yearId),
+  });
+}
+
+export function useRolloverDecide() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { yearId: string; decisions: Array<{ studentId: string; decision: string; note?: string | null }> }) =>
+      (await api.post<{ ok: boolean; count: number }>(`/academic-years/${vars.yearId}/rollover/decide`, {
+        decisions: vars.decisions,
+      })).data,
+    onSuccess: (_data, vars) => qc.invalidateQueries({ queryKey: ["rollover-preview", vars.yearId] }),
+  });
+}
+
+export function useRolloverApply() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { yearId: string; toAcademicYearId: string; setAsCurrent?: boolean }) =>
+      (await api.post<RolloverApplyResultDto>(`/academic-years/${vars.yearId}/rollover`, {
+        toAcademicYearId: vars.toAcademicYearId,
+        setAsCurrent: vars.setAsCurrent ?? true,
+      })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rollover-preview"] });
+      qc.invalidateQueries({ queryKey: ["academic-years"] });
+      qc.invalidateQueries({ queryKey: ["org-context"] });
+      qc.invalidateQueries({ queryKey: ["students"] });
+    },
   });
 }
 

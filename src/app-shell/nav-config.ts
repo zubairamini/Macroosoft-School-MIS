@@ -5,7 +5,7 @@
 import {
   LayoutDashboard, GraduationCap, Users, BookOpen, ClipboardCheck,
   FileSpreadsheet, Wallet, Library, IdCard, Megaphone, BarChart3, Settings,
-  ReceiptText, Coins, Landmark, BadgeDollarSign,
+  ReceiptText, Coins, Landmark, BadgeDollarSign, Home, Printer,
   type LucideIcon,
 } from "lucide-react";
 
@@ -82,7 +82,7 @@ export const NAV_GROUPS: NavGroup[] = [
     key: "library",
     label: "کتاب‌ها و کتابخانه",
     items: [
-      { key: "library", label: "کتابخانه", icon: Library, route: "/roadmap/library", permission: "dashboard.view", implemented: false, phaseNote: "کتابخانه و توزیع کتاب درسی در مرحلهٔ چهارم ساخته می‌شود." },
+      { key: "library", label: "کتابخانه", icon: Library, route: "/library", permission: "library.view", implemented: true },
     ],
   },
   {
@@ -97,21 +97,29 @@ export const NAV_GROUPS: NavGroup[] = [
     key: "services",
     label: "خدمات مکتب",
     items: [
-      { key: "services", label: "خدمات", icon: Megaphone, route: "/roadmap/services", permission: "dashboard.view", implemented: false, phaseNote: "ترانسپورت، انبار و ثبت مهمان‌ها در مرحلهٔ پنجم ساخته می‌شود." },
+      { key: "services", label: "خدمات", icon: Megaphone, route: "/services", permission: "services.view", implemented: true },
     ],
   },
   {
     key: "communications",
     label: "ارتباطات",
     items: [
-      { key: "announcements", label: "اعلانات", icon: Megaphone, route: "/roadmap/announcements", permission: "dashboard.view", implemented: false, phaseNote: "اعلانات و پیام‌ها در مرحلهٔ چهارم ساخته می‌شود." },
+      { key: "announcements", label: "اعلانات", icon: Megaphone, route: "/announcements", permission: "announcements.view", implemented: true },
+    ],
+  },
+  {
+    key: "portal",
+    label: "پورتال‌ها",
+    items: [
+      { key: "portal", label: "پورتال اولیا/شاگرد", icon: Home, route: "/portal", permission: "dashboard.view", implemented: true },
     ],
   },
   {
     key: "reports",
     label: "گزارش‌ها",
     items: [
-      { key: "reports", label: "گزارش‌ها", icon: BarChart3, route: "/roadmap/reports", permission: "dashboard.view", implemented: false, phaseNote: "گزارش‌های تفصیلی، چاپ و صدور در مراحل بعدی ساخته می‌شود." },
+      { key: "reports", label: "گزارش‌ها", icon: BarChart3, route: "/reports", permission: "reports.view", implemented: true },
+      { key: "id-cards", label: "کارت‌های شناسایی", icon: Printer, route: "/cards", permission: "students.view", implemented: true },
     ],
   },
   {
@@ -119,14 +127,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "تنظیمات",
     items: [
       { key: "settings", label: "تنظیمات مکتب", icon: Settings, route: "/settings", permission: "settings.view", implemented: true },
+      { key: "year-end", label: "سال‌گذرانی", icon: IdCard, route: "/settings/year-end", permission: "year_end.manage", implemented: true },
       { key: "audit", label: "ریکارود نظارتی", icon: BarChart3, route: "/settings/audit", permission: "audit.view", implemented: true },
     ],
   },
 ];
 
 export const ROADMAP_INFO: Record<string, { title: string; module: string; detail: string }> = {
-  library: { title: "کتابخانه", module: "کتابخانه و کتاب‌های درسی", detail: "کاتلاگ، نسخه‌های فیزیکی، امانت و توزیع کتاب درسی با پیوند مالی — طبق نقشهٔ راه در مرحلهٔ چهارم ساخته می‌شود." },
-  services: { title: "خدمات مکتب", module: "خدمات مکتب", detail: "ترانسپورت، انبار، ثبت مهمان‌ها و تقویم رویدادها — طبق نقشهٔ راه در مرحلهٔ پنجم ساخته می‌شود." },
-  announcements: { title: "اعلانات", module: "اعلانات و ارتباطات", detail: "اعلانات مکتب/شعبه/صنف با وضعیت خواندن، و پیام‌های SMS/ایمیل — طبق نقشهٔ راه در مرحلهٔ چهارم ساخته می‌شود." },
-  reports: { title: "گزارش‌ها", module: "گزارش‌ها", detail: "ثبت‌نامه‌ها، گزارش‌های حاضری، نتایج و مالی با چاپ و صدور — طبق نقشهٔ راه در مراحل بعدی ساخته می‌شود." },
+  reports: { title: "گزارش‌ها", module: "گزارش‌ها", detail: "گزارش‌های تفصیلی، چاپ و صدور — گزارش‌های اصلی در بخش «گزارش‌ها» فعال هستند." },
 };
