@@ -77,6 +77,13 @@ model Organization {
   guardians     Guardian[]
   staffMembers  StaffMember[]
   assessments   Assessment[]
+  // Phase 3 — finance
+  feeStructures FeeStructure[]
+  discounts     Discount[]
+  invoices      Invoice[]
+  payments      Payment[]
+  expenses      Expense[]
+  payrollRuns   PayrollRun[]
 }
 
 model Branch {
@@ -97,6 +104,13 @@ model Branch {
   classSections  ClassSection[]
   userRoles      UserRole[]
   staffMembers   StaffMember[]
+
+  // Phase 3 — finance rows of this branch
+  feeStructures  FeeStructure[]
+  invoices       Invoice[]
+  payments       Payment[]
+  expenses       Expense[]
+  payrollRuns    PayrollRun[]
 
   @@unique([orgId, code])
   @@index([orgId])
@@ -411,6 +425,10 @@ model Student {
   documents   StudentDocument[]
   attendanceRecords AttendanceRecord[]
   grades      Grade[]
+  // Phase 3 — finance records keyed on the student
+  invoices    Invoice[]
+  payments    Payment[]
+  discounts   Discount[]
 
   @@index([orgId, status])
 }
@@ -512,6 +530,11 @@ model StaffMember {
   attendanceSessions  AttendanceSession[] @relation("AttendanceRecorder")
   attendanceSubmits   AttendanceSession[] @relation("AttendanceSubmitter")
   assessments         Assessment[]        @relation("AssessmentExaminer")
+
+  // Phase 3 — base monthly salary in diram (100 diram = 1 AFN); the source
+  // figure payroll runs snapshot into PayrollItem.baseDiram.
+  salaryDiram Int?
+  payrollItems PayrollItem[]
 
   @@index([orgId, status])
   @@index([branchId])
@@ -737,4 +760,208 @@ model Notification {
   createdAt DateTime @default(now())
 
   @@index([userId, isRead])
+}
+
+// ── Fees & finance — Phase 3 ─────────────────────────────────────────────
+//
+// BRANCH ISOLATION: every finance row carries branchId (the branch the money
+// belongs to). Branch-bound roles only ever see rows of their own branch;
+// only admin / general_manager cross branch boundaries.
+//
+// MONEY: integers in diram (100 diram = 1 AFN) — never floats.
+// HISTORY: no deletes; corrections are voids with a reason + audit event.
+
+model FeeStructure {
+  id             String   @id @default(cuid())
+  orgId          String
+  org            Organization @relation(fields: [orgId], references: [id])
+  academicYearId String
+  // null = applies to every branch of the organization
+  branchId       String?
+  branch         Branch?  @relation(fields: [branchId], references: [id])
+  name           String   // «شهریهٔ ماهانهٔ صنف چهارم»
+  // JSON array of grade levels the fee applies to, e.g. "[1,2,3]"
+  gradeLevels    String   @default("[]") // JSON
+  // "one_time" | "monthly" | "termly"
+  periodKind     String
+  amountDiram    Int
+  // "cash" flow classification is not needed here — fees are receivables.
+  isActive       Boolean  @default(true)
+  note           String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  invoices       Invoice[]
+
+  @@index([academicYearId, isActive])
+}
+
+model Discount {
+  id             String   @id @default(cuid())
+  orgId          String
+  org            Organization @relation(fields: [orgId], references: [id])
+  academicYearId String
+  studentId      String
+  student        Student  @relation(fields: [studentId], references: [id])
+  // "percent" (value 1..100) | "fixed_diram" (value in diram)
+  kind           String
+  value          Int
+  reason         String
+  approvedById   String?
+  // "approved" | "revoked"
+  status         String   @default("approved")
+  revokedById    String?
+  revokedAt      DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([studentId, academicYearId, status])
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  orgId          String
+  org            Organization @relation(fields: [orgId], references: [id])
+  // Sequential invoice number, e.g. "F-1405-0007"
+  invoiceNumber  String   @unique
+  academicYearId String
+  branchId       String
+  branch         Branch   @relation(fields: [branchId], references: [id])
+  studentId      String
+  student        Student  @relation(fields: [studentId], references: [id])
+  feeStructureId String?
+  feeStructure   FeeStructure? @relation(fields: [feeStructureId], references: [id])
+  // Machine period key — unique per student among NON-voided invoices
+  // (enforced transactionally): "1405-08", "term-1", "once-registration"
+  periodKey      String
+  // Human label: «شهریهٔ ماهٔ میزان ۱۴۰۵»
+  periodLabel    String
+  amountDiram    Int      // gross
+  discountDiram  Int      @default(0) // snapshot of the discount at issue time
+  netDiram       Int      // amount - discount
+  paidDiram      Int      @default(0) // denormalized sum of live payments
+  // "issued" | "partially_paid" | "paid" | "void"
+  status         String   @default("issued")
+  // date-only ISO — payment deadline
+  dueDate        String?
+  note           String?
+  issuedById     String?
+  voidedById     String?
+  voidedAt       DateTime?
+  voidReason     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  payments       Payment[]
+
+  @@index([branchId, status])
+  @@index([academicYearId, periodKey])
+  @@index([studentId])
+}
+
+model Payment {
+  id             String   @id @default(cuid())
+  orgId          String
+  org            Organization @relation(fields: [orgId], references: [id])
+  // Sequential receipt number, e.g. "R-1405-0031"
+  receiptNumber  String   @unique
+  invoiceId      String
+  invoice        Invoice  @relation(fields: [invoiceId], references: [id])
+  studentId      String
+  student        Student  @relation(fields: [studentId], references: [id])
+  branchId       String
+  branch         Branch   @relation(fields: [branchId], references: [id])
+  amountDiram    Int      // > 0
+  // "cash" | "bank" | "hawala" | "cheque"
+  method         String
+  // date-only ISO (Asia/Kabul) — the value date of the receipt
+  date           String
+  note           String?
+  receivedById   String?
+  voidedById     String?
+  voidedAt       DateTime?
+  voidReason     String?
+  createdAt      DateTime @default(now())
+
+  @@index([invoiceId])
+  @@index([branchId, date])
+  @@index([studentId])
+}
+
+model Expense {
+  id             String   @id @default(cuid())
+  orgId          String
+  org            Organization @relation(fields: [orgId], references: [id])
+  // Sequential expense number, e.g. "E-1405-0012"
+  expenseNumber  String   @unique
+  branchId       String
+  branch         Branch   @relation(fields: [branchId], references: [id])
+  // date-only ISO — the value date
+  date           String
+  // "utilities" | "maintenance" | "supplies" | "transport" | "salaries" | "other"
+  category       String
+  payee          String?
+  amountDiram    Int
+  note           String?
+  paidById       String?
+  approvedById   String?
+  voidedById     String?
+  voidedAt       DateTime?
+  voidReason     String?
+  createdAt      DateTime @default(now())
+
+  @@index([branchId, date])
+  @@index([category])
+}
+
+// ── Payroll — Phase 3 ────────────────────────────────────────────────────
+
+model PayrollRun {
+  id             String   @id @default(cuid())
+  orgId          String
+  org            Organization @relation(fields: [orgId], references: [id])
+  branchId       String
+  branch         Branch   @relation(fields: [branchId], references: [id])
+  academicYearId String
+  // Solar Hijri month key, e.g. "1405-08" (میزان)
+  periodKey      String
+  periodLabel    String   // «معاشات ماهٔ میزان ۱۴۰۵»
+  // "draft" | "approved" | "paid"
+  status         String   @default("draft")
+  // denormalized net total across items (maintained transactionally)
+  totalsDiram    Int      @default(0)
+  approvedById   String?
+  approvedAt     DateTime?
+  paidById       String?
+  paidAt         DateTime?
+  note           String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  items          PayrollItem[]
+
+  @@index([branchId, periodKey])
+  @@index([academicYearId])
+}
+
+model PayrollItem {
+  id             String   @id @default(cuid())
+  payrollRunId   String
+  payrollRun     PayrollRun @relation(fields: [payrollRunId], references: [id])
+  staffId        String
+  staff          StaffMember @relation(fields: [staffId], references: [id])
+  // Sequential payslip number, e.g. "P-1405-08-0003"
+  payslipNumber  String   @unique
+  // snapshot of StaffMember.salaryDiram at generation time
+  baseDiram      Int
+  allowanceDiram Int      @default(0)
+  bonusDiram     Int      @default(0)
+  deductionDiram Int      @default(0)
+  netDiram       Int      // base + allowance + bonus - deduction
+  note           String?
+  createdAt      DateTime @default(now())
+
+  @@unique([payrollRunId, staffId])
+  @@index([staffId])
 }

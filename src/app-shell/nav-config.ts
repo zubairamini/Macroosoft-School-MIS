@@ -5,6 +5,7 @@
 import {
   LayoutDashboard, GraduationCap, Users, BookOpen, ClipboardCheck,
   FileSpreadsheet, Wallet, Library, IdCard, Megaphone, BarChart3, Settings,
+  ReceiptText, Coins, Landmark, BadgeDollarSign,
   type LucideIcon,
 } from "lucide-react";
 
@@ -69,7 +70,12 @@ export const NAV_GROUPS: NavGroup[] = [
     key: "finance",
     label: "امور مالی",
     items: [
-      { key: "fees", label: "فیس و وصولی", icon: Wallet, route: "/roadmap/fees", permission: "dashboard.view", implemented: false, phaseNote: "فیس، رسید و مصارف در مرحلهٔ سوم ساخته می‌شود." },
+      { key: "fees", label: "فیس‌ها و تخفیف‌ها", icon: Wallet, route: "/finance/fees", permission: "fees.view", implemented: true },
+      { key: "invoices", label: "فاکتورها", icon: ReceiptText, route: "/finance/invoices", permission: "invoices.view", implemented: true },
+      { key: "payments", label: "رسیدهای پرداخت", icon: Coins, route: "/finance/payments", permission: "payments.view", implemented: true },
+      { key: "expenses", label: "مصارف", icon: Landmark, route: "/finance/expenses", permission: "expenses.view", implemented: true },
+      { key: "payroll", label: "معاشات", icon: BadgeDollarSign, route: "/finance/payroll", permission: "payroll.view", implemented: true },
+      { key: "finance-reports", label: "گزارش مالی", icon: BarChart3, route: "/finance/reports", permission: "invoices.view", implemented: true },
     ],
   },
   {
@@ -119,7 +125,6 @@ export const NAV_GROUPS: NavGroup[] = [
 ];
 
 export const ROADMAP_INFO: Record<string, { title: string; module: string; detail: string }> = {
-  fees: { title: "فیس و وصولی", module: "فیس، رسید و مصارف", detail: "پلان فیس، ایجاد خودکار صورت‌حساب، وصولی نقدی و رسید چاپی — طبق نقشهٔ راه در مرحلهٔ سوم ساخته می‌شود." },
   library: { title: "کتابخانه", module: "کتابخانه و کتاب‌های درسی", detail: "کاتلاگ، نسخه‌های فیزیکی، امانت و توزیع کتاب درسی با پیوند مالی — طبق نقشهٔ راه در مرحلهٔ چهارم ساخته می‌شود." },
   services: { title: "خدمات مکتب", module: "خدمات مکتب", detail: "ترانسپورت، انبار، ثبت مهمان‌ها و تقویم رویدادها — طبق نقشهٔ راه در مرحلهٔ پنجم ساخته می‌شود." },
   announcements: { title: "اعلانات", module: "اعلانات و ارتباطات", detail: "اعلانات مکتب/شعبه/صنف با وضعیت خواندن، و پیام‌های SMS/ایمیل — طبق نقشهٔ راه در مرحلهٔ چهارم ساخته می‌شود." },

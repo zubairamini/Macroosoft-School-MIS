@@ -51,7 +51,7 @@ const spec = {
       "server-side. Errors use a consistent envelope with Dari messages. " +
       "State-changing requests require the x-maktabyar-client header or a " +
       "same-origin Origin header (CSRF defense).",
-    version: "1.1.0-phase2",
+    version: "1.2.0-phase3",
   },
   servers: [{ url: "/api/v1", description: "Same-origin API" }],
   tags: [
@@ -62,6 +62,8 @@ const spec = {
     { name: "timetable", description: "برنامهٔ هفتگیٔ صنف‌ها با تشخیص تضاد (مرحلهٔ دوم)" },
     { name: "attendance", description: "حاضری روزانه/پریودی با قطعیت و تصحیح (مرحلهٔ دوم)" },
     { name: "assessments", description: "امتحانات، ثبت نمرات و انتشار نتایج (مرحلهٔ دوم)" },
+    { name: "finance", description: "فیس‌ها، فاکتورها، رسیدهای پرداخت، مصارف و گزارش‌های مالی (مرحلهٔ سوم)" },
+    { name: "payroll", description: "سیشن‌های معاشات ماهانه (مرحلهٔ سوم)" },
     { name: "applications", description: "درخواست‌های شمولیت و چرخهٔ تصمیم" },
     { name: "students", description: "شاگردان، پروفایل و چرخهٔ حیات" },
     { name: "guardians", description: "اولیا" },
@@ -483,6 +485,124 @@ const spec = {
           { name: "academicYearId", in: "query", schema: { type: "string" } },
         ],
         responses: { 200: okJson("Student"), 403: errorResponse("خارج از حیطهٔ اجازه (ولی: فقط فرزند خود)" ) },
+      },
+    },
+    "/fees": {
+      get: {
+        tags: ["finance"],
+        summary: "پلان‌های فیس (fees.view) — تفکیک شعبه‌ای؛ فیس سراسری برای همه",
+        parameters: [
+          { name: "academicYearId", in: "query", schema: { type: "string" } },
+          { name: "isActive", in: "query", schema: { type: "string", enum: ["true", "false"] } },
+        ],
+        responses: { 200: okList("Student"), 403: errorResponse("بدون اجازهٔ fees.view") },
+      },
+      post: {
+        tags: ["finance"],
+        summary: "ایجاد پلان فیس (fees.manage) — مبلغ به دیرم (۱ افغانی = ۱۰۰ دیرم)",
+        responses: { 200: okJson("Student"), 400: errorResponse("اعتبارسنجی") },
+      },
+    },
+    "/fees/{id}": {
+      patch: { tags: ["finance"], summary: "ویرایش پلان فیس", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 404: errorResponse("پیدا نشد") } },
+    },
+    "/discounts": {
+      get: { tags: ["finance"], summary: "تخفیف‌های شاگردان (fees.view)", parameters: [{ name: "studentId", in: "query", schema: { type: "string" } }], responses: { 200: okList("Student") } },
+      post: { tags: ["finance"], summary: "ثبت تخفیف درصدی/مبلغی (fees.manage)", responses: { 200: okJson("Student"), 400: errorResponse("درصد > ۱۰۰") } },
+    },
+    "/discounts/{id}": {
+      patch: { tags: ["finance"], summary: "لغو تخفیف (fees.manage)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student") } },
+    },
+    "/invoices": {
+      get: {
+        tags: ["finance"],
+        summary: "فاکتورها (invoices.view) — تفکیک شعبه‌ای؛ ولی: فقط فرزندان خود",
+        parameters: [
+          { name: "status", in: "query", schema: { type: "string", enum: ["issued", "partially_paid", "paid", "void"] } },
+          { name: "periodKey", in: "query", schema: { type: "string" }, description: "مثلاً 1405-08 (ماه شمسی)" },
+          { name: "outstanding", in: "query", schema: { type: "string", enum: ["true"] } },
+          { name: "q", in: "query", schema: { type: "string" } },
+        ],
+        responses: { 200: okList("Student"), 403: errorResponse("بدون اجازهٔ invoices.view") },
+      },
+      post: {
+        tags: ["finance"],
+        summary: "صدور گروهی فاکتور (invoices.manage) — idempotent برای هر شاگرد/دوره",
+        responses: { 200: okJson("Student"), 400: errorResponse("بدون شعبهٔ صنفی مطابق صنف‌های فیس"), 409: errorResponse("—") },
+      },
+    },
+    "/invoices/{id}": {
+      get: { tags: ["finance"], summary: "جزئیات فاکتور با رسیدهای پرداخت", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 403: errorResponse("شعبهٔ دیگر / فرزند دیگر") } },
+      patch: { tags: ["finance"], summary: "باطل‌کردن فاکتور بدون پرداخت (دلیل الزامی)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 400: errorResponse("فاکتور با پرداخت ثبت‌شده") } },
+    },
+    "/payments": {
+      get: {
+        tags: ["finance"],
+        summary: "رسیدهای پرداخت (payments.view) — تفکیک شعبه‌ای",
+        parameters: [
+          { name: "from", in: "query", schema: { type: "string", format: "date" } },
+          { name: "to", in: "query", schema: { type: "string", format: "date" } },
+          { name: "method", in: "query", schema: { type: "string", enum: ["cash", "bank", "hawala", "cheque"] } },
+          { name: "q", in: "query", schema: { type: "string" } },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: {
+        tags: ["finance"],
+        summary: "ثبت پرداخت با رسید ترتیبی (payments.collect) — پرداخت بیش از بقیه رد می‌شود",
+        responses: { 200: okJson("Student"), 400: errorResponse("مبلغ بیش از بقیهٔ فاکتور"), 409: errorResponse("وضعیت هم‌زمان تغییر کرده") },
+      },
+    },
+    "/payments/{id}": {
+      patch: { tags: ["finance"], summary: "باطل‌کردن رسید با دلیل (payments.void) — بدهی برمی‌گردد", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student") } },
+    },
+    "/expenses": {
+      get: {
+        tags: ["finance"],
+        summary: "مصارف مکتب (expenses.view) — تفکیک شعبه‌ای",
+        parameters: [
+          { name: "from", in: "query", schema: { type: "string", format: "date" } },
+          { name: "to", in: "query", schema: { type: "string", format: "date" } },
+          { name: "category", in: "query", schema: { type: "string", enum: ["utilities", "maintenance", "supplies", "transport", "salaries", "other"] } },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: { tags: ["finance"], summary: "ثبت مصرف (expenses.manage)", responses: { 200: okJson("Student"), 400: errorResponse("اعتبارسنجی") } },
+    },
+    "/expenses/{id}": {
+      patch: { tags: ["finance"], summary: "باطل‌کردن مصرف با دلیل", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student") } },
+    },
+    "/payroll": {
+      get: {
+        tags: ["payroll"],
+        summary: "سیشن‌های معاشات (payroll.view) — تفکیک شعبه‌ای",
+        parameters: [
+          { name: "periodKey", in: "query", schema: { type: "string" }, description: "مثلاً 1405-08" },
+          { name: "status", in: "query", schema: { type: "string", enum: ["draft", "approved", "paid"] } },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: {
+        tags: ["payroll"],
+        summary: "ایجاد سیشن از معاش پایهٔ کارمندان شعبه (payroll.manage)",
+        responses: { 200: okJson("Student"), 409: errorResponse("برای این ماه قبلاً ساخته شده"), 400: errorResponse("کارمند با معاش ثبت‌شده نیست") },
+      },
+    },
+    "/payroll/{id}": {
+      get: { tags: ["payroll"], summary: "جزئیات سیشن با قلم‌های معاش", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student") } },
+      patch: {
+        tags: ["payroll"],
+        summary: "تعدیل قلم‌ها (پیش‌نویس) یا action=approve|pay — پرداخت، مصرف «معاشات» ثبت می‌کند",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student"), 400: errorResponse("فقط پیش‌نویس قابل ویرایش / ابتدا تایید کنید") },
+      },
+    },
+    "/finance/reports": {
+      get: {
+        tags: ["finance"],
+        summary: "گزارش مالی ماهانه — KPIها، سری ۶ ماهه، بدهکاران عمده",
+        parameters: [{ name: "month", in: "query", schema: { type: "string" }, description: "کلید ماه شمسی مثلاً 1405-08" }],
+        responses: { 200: okJson("Student") },
       },
     },
     "/guardians": {

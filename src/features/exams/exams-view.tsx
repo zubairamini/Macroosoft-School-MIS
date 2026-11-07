@@ -186,6 +186,10 @@ function GradebookDialog({ assessmentId, onClose }: { assessmentId: string; onCl
     return (
       <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
         <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>دفتر نمرات</DialogTitle>
+            <DialogDescription className="sr-only">در حال بارگذاری معلومات امتحان…</DialogDescription>
+          </DialogHeader>
           <div className="flex items-center justify-center py-10">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>

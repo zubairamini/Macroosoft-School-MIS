@@ -12,6 +12,8 @@ import type {
   AppSettingsDto, GuardianDto, StaffDto, StaffDetailDto, TeachingAssignmentDto,
   TimetableSlotDto, AttendanceSessionDto, AttendanceSessionDetailDto,
   AttendanceSummaryDto, AssessmentDto, AssessmentDetailDto, ReportCardDto,
+  FeeStructureDto, DiscountDto, InvoiceDto, PaymentDto, ExpenseDto,
+  PayrollRunDto, FinanceReportsDto,
 } from "./client";
 
 function qs(params: Record<string, string | number | undefined | null>): string {
@@ -620,6 +622,224 @@ export function useReportCard(studentId: string | null) {
     queryKey: ["report-card", studentId],
     queryFn: async () => (await api.get<ReportCardDto>(`/students/${studentId}/report-card`)).data,
     enabled: Boolean(studentId),
+  });
+}
+
+// ── Phase 3: finance ────────────────────────────────────────────────────────
+
+export function useFeeStructures(filters: { academicYearId?: string } = {}) {
+  return useQuery({
+    queryKey: ["fees", filters.academicYearId ?? ""],
+    queryFn: async () => (await api.get<FeeStructureDto[]>(`/fees${qs(filters)}`)).data,
+  });
+}
+
+export function useCreateFeeStructure() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<FeeStructureDto>("/fees", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fees"] }),
+  });
+}
+
+export function useUpdateFeeStructure() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string } & Record<string, unknown>) =>
+      (await api.patch<FeeStructureDto>(`/fees/${vars.id}`, vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fees"] }),
+  });
+}
+
+export function useDiscounts(filters: { academicYearId?: string; studentId?: string } = {}) {
+  return useQuery({
+    queryKey: ["discounts", filters.academicYearId ?? "", filters.studentId ?? ""],
+    queryFn: async () => (await api.get<DiscountDto[]>(`/discounts${qs(filters)}`)).data,
+  });
+}
+
+export function useCreateDiscount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<DiscountDto>("/discounts", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["discounts"] }),
+  });
+}
+
+export function useRevokeDiscount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      (await api.patch<{ ok: boolean }>(`/discounts/${id}`, {})).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["discounts"] }),
+  });
+}
+
+export function useInvoices(filters: {
+  status?: string; periodKey?: string; studentId?: string; q?: string; outstanding?: string;
+} = {}) {
+  return useQuery({
+    queryKey: ["invoices", JSON.stringify(filters)],
+    queryFn: async () => (await api.get<InvoiceDto[]>(`/invoices${qs(filters)}`)).data,
+  });
+}
+
+export function useInvoice(id: string | null) {
+  return useQuery({
+    queryKey: ["invoice", id],
+    queryFn: async () => (await api.get<InvoiceDto>(`/invoices/${id}`)).data,
+    enabled: Boolean(id),
+  });
+}
+
+export function useIssueInvoices() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<{ createdCount: number; skippedCount: number; numbers: string[] }>("/invoices", vars)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["finance-reports"] });
+    },
+  });
+}
+
+export function useVoidInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; reason: string }) =>
+      (await api.patch<{ ok: boolean }>(`/invoices/${vars.id}`, { reason: vars.reason })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoice"] });
+    },
+  });
+}
+
+export function usePayments(filters: {
+  from?: string; to?: string; method?: string; q?: string; invoiceId?: string; studentId?: string;
+} = {}) {
+  return useQuery({
+    queryKey: ["payments", JSON.stringify(filters)],
+    queryFn: async () => (await api.get<PaymentDto[]>(`/payments${qs(filters)}`)).data,
+  });
+}
+
+export function useCollectPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<PaymentDto>("/payments", vars)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoice"] });
+      qc.invalidateQueries({ queryKey: ["payments"] });
+      qc.invalidateQueries({ queryKey: ["finance-reports"] });
+    },
+  });
+}
+
+export function useVoidPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; reason: string }) =>
+      (await api.patch<{ ok: boolean }>(`/payments/${vars.id}`, { reason: vars.reason })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payments"] });
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoice"] });
+      qc.invalidateQueries({ queryKey: ["finance-reports"] });
+    },
+  });
+}
+
+export function useExpenses(filters: { from?: string; to?: string; category?: string } = {}) {
+  return useQuery({
+    queryKey: ["expenses", JSON.stringify(filters)],
+    queryFn: async () => (await api.get<ExpenseDto[]>(`/expenses${qs(filters)}`)).data,
+  });
+}
+
+export function useCreateExpense() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<ExpenseDto>("/expenses", vars)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      qc.invalidateQueries({ queryKey: ["finance-reports"] });
+    },
+  });
+}
+
+export function useVoidExpense() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; reason: string }) =>
+      (await api.patch<{ ok: boolean }>(`/expenses/${vars.id}`, { reason: vars.reason })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      qc.invalidateQueries({ queryKey: ["finance-reports"] });
+    },
+  });
+}
+
+export function usePayrollRuns(filters: { periodKey?: string; status?: string } = {}) {
+  return useQuery({
+    queryKey: ["payroll", JSON.stringify(filters)],
+    queryFn: async () => (await api.get<PayrollRunDto[]>(`/payroll${qs(filters)}`)).data,
+  });
+}
+
+export function usePayrollRun(id: string | null) {
+  return useQuery({
+    queryKey: ["payroll-run", id],
+    queryFn: async () => (await api.get<PayrollRunDto>(`/payroll/${id}`)).data,
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreatePayrollRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<PayrollRunDto>("/payroll", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["payroll"] }),
+  });
+}
+
+export function useUpdatePayrollItems() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; items: Array<Record<string, unknown>> }) =>
+      (await api.patch<PayrollRunDto>(`/payroll/${vars.id}`, { items: vars.items })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payroll"] });
+      qc.invalidateQueries({ queryKey: ["payroll-run"] });
+    },
+  });
+}
+
+export function usePayrollAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; action: "approve" | "pay" }) =>
+      (await api.patch<{ ok: boolean; status: string; expenseNumber?: string }>(`/payroll/${vars.id}`, { action: vars.action })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payroll"] });
+      qc.invalidateQueries({ queryKey: ["payroll-run"] });
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      qc.invalidateQueries({ queryKey: ["finance-reports"] });
+    },
+  });
+}
+
+export function useFinanceReports(month?: string) {
+  return useQuery({
+    queryKey: ["finance-reports", month ?? ""],
+    queryFn: async () => (await api.get<FinanceReportsDto>(`/finance/reports${qs({ month })}`)).data,
   });
 }
 

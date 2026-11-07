@@ -16,9 +16,9 @@ const querySchema = paginationSchema.extend({
 
 export const GET = withApi(
   { permission: "applications.view" },
-  async (req: NextRequest) => {
+  async (req: NextRequest, { auth }: { auth: AuthContext }) => {
     const q = parseQuery(req.url, querySchema);
-    const result = await listApplications(q);
+    const result = await listApplications(auth, q);
     return jsonList(result.items, result.meta);
   },
 );

@@ -1,0 +1,741 @@
+     1→     1→// ─────────────────────────────────────────────────────────────────────────────
+     2→     2→// مکتب‌یار (MaktabYar) — School Management Information System for Afghanistan
+     3→     3→// Prisma schema — Phase 1 (vertical slice)
+     4→     4→//
+     5→     5→// PORTABILITY NOTE (PostgreSQL migration path):
+     6→     6→//   This sandbox runs SQLite. Production targets PostgreSQL. Because SQLite
+     7→     7→//   has no native enums, enum-like fields are String columns validated by
+     8→     8→//   zod schemas at the application boundary (src/server/*/dto.ts). Allowed
+     9→     9→//   values are documented per field. On PostgreSQL these become enums.
+    10→    10→//
+    11→    11→// DATE/TIME INVARIANTS:
+    12→    12→//   - Instants (login, audit, created/updated) → DateTime, stored UTC.
+    13→    13→//   - Date-only values (birth dates, attendance dates, enrollment dates,
+    14→    14→//     academic-year boundaries) → String "YYYY-MM-DD" (ISO date-only).
+    15→    15→//     No time component ⇒ no timezone shift can alter birthdays. Convert to
+    16→    16→//     `date` column type on PostgreSQL.
+    17→    17→//
+    18→    18→// MONEY INVARIANT (Phase 3 modules will rely on it):
+    19→    19→//   - All monetary amounts are integers in minor units (diram; 100 diram = 1
+    20→    20→//     AFN). Binary floating point is never used for money.
+    21→    21→//
+    22→    22→// CONCURRENCY INVARIANTS:
+    23→    23→//   - Optimistic concurrency via `version Int` on editable aggregates
+    24→    24→//     (Application, Student, Organization). Bumping is done in transactions.
+    25→    25→//   - Scarce/monetary resources (Phase 3: invoices, payments, book copies)
+    26→    26→//     will additionally use transactions + row-level checks.
+    27→    27→//
+    28→    28→// HISTORICAL RECORD INVARIANT:
+    29→    29→//   - No soft deletes on financial or academic history. Corrections are new
+    30→    30→//     records (reversals / corrections) that reference the original.
+    31→    31→// ─────────────────────────────────────────────────────────────────────────────
+    32→    32→
+    33→    33→generator client {
+    34→    34→  provider = "prisma-client-js"
+    35→    35→}
+    36→    36→
+    37→    37→datasource db {
+    38→    38→  provider = "sqlite"
+    39→    39→  url      = env("DATABASE_URL")
+    40→    40→}
+    41→    41→
+    42→    42→// ── Organization & structure ────────────────────────────────────────────────
+    43→    43→
+    44→    44→model Organization {
+    45→    45→  id            String   @id @default(cuid())
+    46→    46→  // Configurable product + school identity
+    47→    47→  productName   String   @default("مکتب‌یار")
+    48→    48→  name          String   @default("")
+    49→    49→  // "public" | "private" (school configuration, affects fee modules)
+    50→    50→  schoolType    String   @default("private")
+    51→    51→  province      String?
+    52→    52→  district      String?
+    53→    53→  address       String?
+    54→    54→  phone         String?
+    55→    55→  email         String?
+    56→    56→  // EMIS / registration identifiers — optional, school-supplied
+    57→    57→  emisCode      String?
+    58→    58→  registrationNumber String?
+    59→    59→  logoUrl       String?
+    60→    60→  ministryLogoUrl    String? // replaceable placeholder asset until supplied
+    61→    61→  // Report heading lines above school name (province/district education dir.)
+    62→    62→  reportHeading String?
+    63→    63→  reportFooter  String?
+    64→    64→  // Quick flag: has the first-run setup wizard been completed?
+    65→    65→  isConfigured  Boolean  @default(false)
+    66→    66→  version       Int      @default(1)
+    67→    67→  createdAt     DateTime @default(now())
+    68→    68→  updatedAt     DateTime @updatedAt
+    69→    69→
+    70→    70→  branches      Branch[]
+    71→    71→  academicYears AcademicYear[]
+    72→    72→  gradeLevels   GradeLevel[]
+    73→    73→  shifts        Shift[]
+    74→    74→  subjects      Subject[]
+    75→    75→  applications  Application[]
+    76→    76→  students      Student[]
+    77→    77→  guardians     Guardian[]
+    78→    78→  staffMembers  StaffMember[]
+    79→    79→  assessments   Assessment[]
+    80→    80→}
+    81→    81→
+    82→    82→model Branch {
+    83→    83→  id        String   @id @default(cuid())
+    84→    84→  orgId     String
+    85→    85→  org       Organization @relation(fields: [orgId], references: [id])
+    86→    86→  name      String
+    87→    87→  code      String
+    88→    88→  province  String?
+    89→    89→  district  String?
+    90→    90→  address   String?
+    91→    91→  phone     String?
+    92→    92→  isActive  Boolean  @default(true)
+    93→    93→  createdAt DateTime @default(now())
+    94→    94→  updatedAt DateTime @updatedAt
+    95→    95→
+    96→    96→  rooms          Room[]
+    97→    97→  classSections  ClassSection[]
+    98→    98→  userRoles      UserRole[]
+    99→    99→  staffMembers   StaffMember[]
+   100→   100→
+   101→   101→  @@unique([orgId, code])
+   102→   102→  @@index([orgId])
+   103→   103→}
+   104→   104→
+   105→   105→model AcademicYear {
+   106→   106→  id         String   @id @default(cuid())
+   107→   107→  orgId      String
+   108→   108→  org        Organization @relation(fields: [orgId], references: [id])
+   109→   109→  // Afghan convention: Solar Hijri year label, e.g. "۱۴۰۵" / "1405"
+   110→   110→  name       String
+   111→   111→  startDate  String // date-only ISO "YYYY-MM-DD"
+   112→   112→  endDate    String
+   113→   113→  isCurrent  Boolean  @default(false)
+   114→   114→  // "planned" | "active" | "closed"
+   115→   115→  status     String   @default("planned")
+   116→   116→  createdAt  DateTime @default(now())
+   117→   117→  updatedAt  DateTime @updatedAt
+   118→   118→
+   119→   119→  terms          Term[]
+   120→   120→  classSections  ClassSection[]
+   121→   121→  applications   Application[]
+   122→   122→  enrollments    Enrollment[]
+   123→   123→  teachingAssignments TeachingAssignment[]
+   124→   124→  assessments    Assessment[]
+   125→   125→
+   126→   126→  @@unique([orgId, name])
+   127→   127→  @@index([orgId, isCurrent])
+   128→   128→}
+   129→   129→
+   130→   130→model Term {
+   131→   131→  id             String   @id @default(cuid())
+   132→   132→  academicYearId String
+   133→   133→  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+   134→   134→  name           String // e.g. "نیم‌سال اول"
+   135→   135→  index          Int
+   136→   136→  startDate      String
+   137→   137→  endDate        String
+   138→   138→  createdAt      DateTime @default(now())
+   139→   139→  assessments    Assessment[]
+   140→   140→
+   141→   141→  @@unique([academicYearId, index])
+   142→   142→}
+   143→   143→
+   144→   144→model GradeLevel {
+   145→   145→  id        String   @id @default(cuid())
+   146→   146→  orgId     String
+   147→   147→  org       Organization @relation(fields: [orgId], references: [id])
+   148→   148→  level     Int // 1..12
+   149→   149→  nameDari  String // "صنف اول" ... "صنف دوازدهم"
+   150→   150→  createdAt DateTime @default(now())
+   151→   151→  updatedAt DateTime @updatedAt
+   152→   152→
+   153→   153→  classSections ClassSection[]
+   154→   154→  applications  Application[]
+   155→   155→  enrollments   Enrollment[]
+   156→   156→
+   157→   157→  @@unique([orgId, level])
+   158→   158→}
+   159→   159→
+   160→   160→model Shift {
+   161→   161→  id        String   @id @default(cuid())
+   162→   162→  orgId     String
+   163→   163→  org       Organization @relation(fields: [orgId], references: [id])
+   164→   164→  // e.g. "صبح" | "چاشت" | "عصر"
+   165→   165→  name      String
+   166→   166→  startTime String // "07:00"
+   167→   167→  endTime   String // "12:00"
+   168→   168→  createdAt DateTime @default(now())
+   169→   169→
+   170→   170→  classSections ClassSection[]
+   171→   171→
+   172→   172→  @@unique([orgId, name])
+   173→   173→}
+   174→   174→
+   175→   175→model Room {
+   176→   176→  id        String   @id @default(cuid())
+   177→   177→  branchId  String
+   178→   178→  branch    Branch   @relation(fields: [branchId], references: [id])
+   179→   179→  name      String
+   180→   180→  capacity  Int      @default(30)
+   181→   181→  createdAt DateTime @default(now())
+   182→   182→
+   183→   183→  @@unique([branchId, name])
+   184→   184→}
+   185→   185→
+   186→   186→model Subject {
+   187→   187→  id        String   @id @default(cuid())
+   188→   188→  orgId     String
+   189→   189→  org       Organization @relation(fields: [orgId], references: [id])
+   190→   190→  nameDari  String // "دری", "ریاضی", ...
+   191→   191→  code      String
+   192→   192→  // Grades where the subject is taught: [1,2,3...] (informational in Phase 1)
+   193→   193→  grades    String   @default("[]") // JSON int array
+   194→   194→  isActive  Boolean  @default(true)
+   195→   195→  createdAt DateTime @default(now())
+   196→   196→  updatedAt DateTime @updatedAt
+   197→   197→
+   198→   198→  teachingAssignments TeachingAssignment[]
+   199→   199→  timetableSlots      TimetableSlot[]
+   200→   200→  attendanceSessions  AttendanceSession[]
+   201→   201→  assessments         Assessment[]
+   202→   202→
+   203→   203→  @@unique([orgId, code])
+   204→   204→}
+   205→   205→
+   206→   206→model ClassSection {
+   207→   207→  id             String   @id @default(cuid())
+   208→   208→  academicYearId String
+   209→   209→  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+   210→   210→  gradeLevelId   String
+   211→   211→  gradeLevel     GradeLevel @relation(fields: [gradeLevelId], references: [id])
+   212→   212→  branchId       String
+   213→   213→  branch         Branch     @relation(fields: [branchId], references: [id])
+   214→   214→  shiftId        String?
+   215→   215→  shift          Shift?     @relation(fields: [shiftId], references: [id])
+   216→   216→  roomName       String?
+   217→   217→  capacity       Int      @default(35)
+   218→   218→  // Section label: "الف", "ب", "A", "B" — clearly distinct from Branch (شعبهٔ مکتب)
+   219→   219→  label          String
+   220→   220→  // "planned" | "active" | "closed"
+   221→   221→  status         String   @default("active")
+   222→   222→  createdAt      DateTime @default(now())
+   223→   223→  updatedAt      DateTime @updatedAt
+   224→   224→
+   225→   225→  enrollments       Enrollment[]
+   226→   226→  teachingAssignments TeachingAssignment[]
+   227→   227→  timetableSlots    TimetableSlot[]
+   228→   228→  attendanceSessions AttendanceSession[]
+   229→   229→  assessments       Assessment[]
+   230→   230→
+   231→   231→  @@unique([academicYearId, gradeLevelId, label])
+   232→   232→  @@index([branchId])
+   233→   233→  @@index([academicYearId])
+   234→   234→}
+   235→   235→
+   236→   236→// ── Users, roles, sessions ──────────────────────────────────────────────────
+   237→   237→
+   238→   238→model User {
+   239→   239→  id               String    @id @default(cuid())
+   240→   240→  username         String    @unique
+   241→   241→  // scrypt hash: "scrypt:N:r:p:salt_b64:hash_b64" — never log this column
+   242→   242→  passwordHash     String
+   243→   243→  fullName         String
+   244→   244→  phone            String?   // normalized Latin digits, +93...
+   245→   245→  email            String?
+   246→   246→  isActive         Boolean   @default(true)
+   247→   247→  mustChangePassword Boolean @default(false)
+   248→   248→  lastLoginAt      DateTime?
+   249→   249→  // Links a parent/guardian portal account to its Guardian record
+   250→   250→  guardianId       String?
+   251→   251→  guardian         Guardian? @relation(fields: [guardianId], references: [id])
+   252→   252→  createdAt        DateTime  @default(now())
+   253→   253→  updatedAt        DateTime  @updatedAt
+   254→   254→
+   255→   255→  sessions    Session[]
+   256→   256→  userRoles   UserRole[]
+   257→   257→  auditEvents AuditEvent[]
+   258→   258→  notifications Notification[]
+   259→   259→  // Inverse of StaffMember.userId — the staff record this account is linked to
+   260→   260→  staffMember StaffMember? @relation("StaffPortalUser")
+   261→   261→
+   262→   262→  @@index([guardianId])
+   263→   263→}
+   264→   264→
+   265→   265→model UserRole {
+   266→   266→  id             String   @id @default(cuid())
+   267→   267→  userId         String
+   268→   268→  user           User     @relation(fields: [userId], references: [id])
+   269→   269→  // System role key ("admin", "registrar", ...) or custom role key
+   270→   270→  roleKey        String
+   271→   271→  // Scope parameters (narrowing). Null = all branches / all years.
+   272→   272→  branchId       String?
+   273→   273→  branch         Branch?  @relation(fields: [branchId], references: [id])
+   274→   274→  academicYearId String?
+   275→   275→  // JSON string array of ClassSection ids — used by section-scoped grants
+   276→   276→  sectionIds     String   @default("[]")
+   277→   277→  createdAt      DateTime @default(now())
+   278→   278→
+   279→   279→  @@index([userId])
+   280→   280→}
+   281→   281→
+   282→   282→model Session {
+   283→   283→  id         String    @id @default(cuid())
+   284→   284→  userId     String
+   285→   285→  user       User      @relation(fields: [userId], references: [id])
+   286→   286→  // SHA-256 of the opaque cookie token — the raw token never lives in DB
+   287→   287→  tokenHash  String    @unique
+   288→   288→  expiresAt  DateTime
+   289→   289→  createdAt  DateTime  @default(now())
+   290→   290→  lastSeenAt DateTime  @default(now())
+   291→   291→  revokedAt  DateTime?
+   292→   292→  ip         String?
+   293→   293→  userAgent  String?
+   294→   294→
+   295→   295→  @@index([userId])
+   296→   296→}
+   297→   297→
+   298→   298→model LoginAttempt {
+   299→   299→  id        String   @id @default(cuid())
+   300→   300→  username  String
+   301→   301→  ip        String
+   302→   302→  success   Boolean
+   303→   303→  at        DateTime @default(now())
+   304→   304→
+   305→   305→  @@index([username, ip, at])
+   306→   306→}
+   307→   307→
+   308→   308→// Application settings (module toggles, numbering, policy placeholders).
+   309→   309→// Versioned business rules (grading policies, fee policies) will get their
+   310→   310→// own versioned tables in later phases — never hardcoded as "Ministry rules".
+   311→   311→model Setting {
+   312→   312→  key       String   @id
+   313→   313→  value     String   @default("{}") // JSON
+   314→   314→  updatedAt DateTime @updatedAt
+   315→   315→}
+   316→   316→
+   317→   317→// Monotonic counters for document numbering (student, applicant, receipt…)
+   318→   318→model Counter {
+   319→   319→  key   String @id
+   320→   320→  value Int    @default(0)
+   321→   321→}
+   322→   322→
+   323→   323→// ── Admissions & student lifecycle ──────────────────────────────────────────
+   324→   324→
+   325→   325→model Application {
+   326→   326→  id             String   @id @default(cuid())
+   327→   327→  orgId          String
+   328→   328→  org            Organization @relation(fields: [orgId], references: [id])
+   329→   329→  academicYearId String
+   330→   330→  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+   331→   331→  branchId       String?
+   332→   332→  // Sequential applicant number, e.g. "A-1405-0007"
+   333→   333→  applicantNumber String  @unique
+   334→   334→  // Applicant personal data (Dari names preserved as entered):
+   335→   335→  // { firstName, fatherName, grandfatherName, gender, birthDate (ISO date-only),
+   336→   336→  //   birthPlace, phone?, address?, previousSchool?, previousGrade?,
+   337→   337→  //   healthNotes? (restricted), photoUrl? }
+   338→   338→  personal       String   @default("{}") // JSON
+   339→   339→  requestedGradeId String?
+   340→   340→  gradeLevel     GradeLevel? @relation(fields: [requestedGradeId], references: [id])
+   341→   341→  requestedSectionId String?
+   342→   342→  requestedShiftId   String?
+   343→   343→  // Guardian info captured during admission:
+   344→   344→  // [{ fullName, relationship, phone, phone2?, occupation?, address?, isPrimary, contactRights, portalAccess }]
+   345→   345→  guardians      String   @default("[]") // JSON array
+   346→   346→  // Document checklist: [{ type, title, provided, fileUrl? }]
+   347→   347→  documents      String   @default("[]") // JSON array
+   348→   348→  // "draft" | "submitted" | "under_review" | "approved" | "rejected" | "enrolled" | "cancelled"
+   349→   349→  status         String   @default("draft")
+   350→   350→  decisionNote   String?
+   351→   351→  submittedAt    DateTime?
+   352→   352→  reviewedById   String?
+   353→   353→  reviewedAt     DateTime?
+   354→   354→  decidedById    String?
+   355→   355→  decidedAt      DateTime?
+   356→   356→  enrolledAt     DateTime?
+   357→   357→  version        Int      @default(1)
+   358→   358→  createdById    String?
+   359→   359→  createdAt      DateTime @default(now())
+   360→   360→  updatedAt      DateTime @updatedAt
+   361→   361→
+   362→   362→  student        Student?
+   363→   363→
+   364→   364→  @@index([orgId, status])
+   365→   365→  @@index([academicYearId, status])
+   366→   366→}
+   367→   367→
+   368→   368→model Guardian {
+   369→   369→  id          String   @id @default(cuid())
+   370→   370→  orgId       String
+   371→   371→  org         Organization @relation(fields: [orgId], references: [id])
+   372→   372→  fullName    String
+   373→   373→  // "father" | "mother" | "uncle" | "other" — stored as entered relationship label
+   374→   374→  relationship String
+   375→   375→  phone       String?
+   376→   376→  phone2      String?
+   377→   377→  email       String?
+   378→   378→  occupation  String?
+   379→   379→  address     String?
+   380→   380→  // Explicit decisions about contact rights and portal access
+   381→   381→  canPickUp   Boolean  @default(false)
+   382→   382→  portalAccess Boolean @default(false)
+   383→   383→  createdAt   DateTime @default(now())
+   384→   384→  updatedAt   DateTime @updatedAt
+   385→   385→
+   386→   386→  students     StudentGuardian[]
+   387→   387→  portalUsers  User[]
+   388→   388→}
+   389→   389→
+   390→   390→model Student {
+   391→   391→  id            String   @id @default(cuid())
+   392→   392→  orgId         String
+   393→   393→  org           Organization @relation(fields: [orgId], references: [id])
+   394→   394→  applicationId String?  @unique
+   395→   395→  application   Application? @relation(fields: [applicationId], references: [id])
+   396→   396→  // Sequential student number, e.g. "S-1405-0001"
+   397→   397→  studentNumber String   @unique
+   398→   398→  // Personal data JSON (same shape as Application.personal)
+   399→   399→  personal      String   @default("{}") // JSON
+   400→   400→  // "active" | "inactive" | "transferred" | "withdrawn" | "graduated"
+   401→   401→  status        String   @default("active")
+   402→   402→  statusNote    String?
+   403→   403→  photoUrl      String?
+   404→   404→  version       Int      @default(1)
+   405→   405→  createdById   String?
+   406→   406→  createdAt     DateTime @default(now())
+   407→   407→  updatedAt     DateTime @updatedAt
+   408→   408→
+   409→   409→  enrollments Enrollment[] @relation("Enrollments")
+   410→   410→  guardians   StudentGuardian[]
+   411→   411→  documents   StudentDocument[]
+   412→   412→  attendanceRecords AttendanceRecord[]
+   413→   413→  grades      Grade[]
+   414→   414→
+   415→   415→  @@index([orgId, status])
+   416→   416→}
+   417→   417→
+   418→   418→model StudentGuardian {
+   419→   419→  id           String   @id @default(cuid())
+   420→   420→  studentId    String
+   421→   421→  student      Student  @relation(fields: [studentId], references: [id])
+   422→   422→  guardianId   String
+   423→   423→  guardian     Guardian @relation(fields: [guardianId], references: [id])
+   424→   424→  relationship String
+   425→   425→  isPrimary    Boolean  @default(false)
+   426→   426→  // Explicit contact/portal rights per child
+   427→   427→  contactRights Boolean @default(true)
+   428→   428→  createdAt     DateTime @default(now())
+   429→   429→
+   430→   430→  @@unique([studentId, guardianId])
+   431→   431→}
+   432→   432→
+   433→   433→model Enrollment {
+   434→   434→  id              String   @id @default(cuid())
+   435→   435→  studentId       String
+   436→   436→  student         Student  @relation("Enrollments", fields: [studentId], references: [id])
+   437→   437→  academicYearId  String
+   438→   438→  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
+   439→   439→  gradeLevelId    String
+   440→   440→  gradeLevel      GradeLevel @relation(fields: [gradeLevelId], references: [id])
+   441→   441→  classSectionId  String?
+   442→   442→  classSection    ClassSection? @relation(fields: [classSectionId], references: [id])
+   443→   443→  rollNumber      Int?
+   444→   444→  // date-only ISO — the official enrollment date (no timezone shift)
+   445→   445→  enrolledOn      String
+   446→   446→  // "active" | "promoted" | "repeated" | "transferred" | "withdrawn" | "graduated"
+   447→   447→  status          String   @default("active")
+   448→   448→  statusNote      String?
+   449→   449→  createdAt       DateTime @default(now())
+   450→   450→  updatedAt       DateTime @updatedAt
+   451→   451→
+   452→   452→  // INVARIANT: one enrollment per student per academic year
+   453→   453→  @@unique([studentId, academicYearId])
+   454→   454→  @@index([academicYearId, gradeLevelId])
+   455→   455→}
+   456→   456→
+   457→   457→model StudentDocument {
+   458→   458→  id           String   @id @default(cuid())
+   459→   459→  studentId    String
+   460→   460→  student      Student  @relation(fields: [studentId], references: [id])
+   461→   461→  // "tazkira" | "photo" | "previous_certificate" | "medical" | "other"
+   462→   462→  type         String
+   463→   463→  title        String
+   464→   464→  fileUrl      String?  // private object storage key (Phase 4: signed access)
+   465→   465→  isVerified   Boolean  @default(false)
+   466→   466→  uploadedById String?
+   467→   467→  uploadedAt   DateTime @default(now())
+   468→   468→
+   469→   469→  @@index([studentId])
+   470→   470→}
+   471→   471→
+   472→   472→// ── Staff (teachers & employees) — Phase 2 ─────────────────────────────
+   473→   473→
+   474→   474→model StaffMember {
+   475→   475→  id        String   @id @default(cuid())
+   476→   476→  orgId     String
+   477→   477→  org       Organization @relation(fields: [orgId], references: [id])
+   478→   478→  branchId  String?
+   479→   479→  branch    Branch?  @relation(fields: [branchId], references: [id])
+   480→   480→  // Optional portal account link (single relation: StaffMember.userId → User)
+   481→   481→  userId    String?  @unique
+   482→   482→  user      User?    @relation("StaffPortalUser", fields: [userId], references: [id])
+   483→   483→  fullName  String
+   484→   484→  fatherName String
+   485→   485→  gender    String   // "male" | "female"
+   486→   486→  // date-only ISO "YYYY-MM-DD"
+   487→   487→  birthDate String
+   488→   488→  phone     String?
+   489→   489→  email     String?
+   490→   490→  address   String?
+   491→   491→  // "teacher" | "admin_staff" | "support" — staff category
+   492→   492→  position  String   @default("teacher")
+   493→   493→  // Free-text qualification, e.g. "لیسانس تعلیم و تربیه"
+   494→   494→  qualification String?
+   495→   495→  // date-only ISO — employment start
+   496→   496→  hireDate  String?
+   497→   497→  // "full_time" | "part_time" | "contract"
+   498→   498→  employmentType String @default("full_time")
+   499→   499→  // Subject specialty ids (JSON string array) — informational; the binding
+   500→   500→  // contract for teaching is TeachingAssignment.
+   501→   501→  specialtySubjectIds String @default("[]") // JSON
+   502→   502→  // "active" | "inactive" | "terminated"
+   503→   503→  status    String   @default("active")
+   504→   504→  statusNote String?
+   505→   505→  version   Int      @default(1)
+   506→   506→  createdById String?
+   507→   507→  createdAt DateTime @default(now())
+   508→   508→  updatedAt DateTime @updatedAt
+   509→   509→
+   510→   510→  teachingAssignments TeachingAssignment[]
+   511→   511→  timetableSlots      TimetableSlot[]
+   512→   512→  attendanceSessions  AttendanceSession[] @relation("AttendanceRecorder")
+   513→   513→  attendanceSubmits   AttendanceSession[] @relation("AttendanceSubmitter")
+   514→   514→  assessments         Assessment[]        @relation("AssessmentExaminer")
+   515→   515→
+   516→   516→  @@index([orgId, status])
+   517→   517→  @@index([branchId])
+   518→   518→}
+   519→   519→
+   520→   520→/// One teacher per (section, subject) per academic year.
+   521→   521→model TeachingAssignment {
+   522→   522→  id             String   @id @default(cuid())
+   523→   523→  academicYearId String
+   524→   524→  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+   525→   525→  classSectionId String
+   526→   526→  classSection   ClassSection @relation(fields: [classSectionId], references: [id])
+   527→   527→  subjectId      String
+   528→   528→  subject        Subject      @relation(fields: [subjectId], references: [id])
+   529→   529→  staffId        String
+   530→   530→  staff          StaffMember  @relation(fields: [staffId], references: [id])
+   531→   531→  createdById    String?
+   532→   532→  createdAt      DateTime @default(now())
+   533→   533→
+   534→   534→  // INVARIANT: exactly one teacher per subject per section per year.
+   535→   535→  @@unique([academicYearId, classSectionId, subjectId])
+   536→   536→  @@index([staffId])
+   537→   537→  @@index([classSectionId])
+   538→   538→}
+   539→   539→
+   540→   540→/// Weekly class schedule. Weekday: 0=شنبه .. 6=جمعه (Afghan week starts
+   541→   541→/// Saturday). Period: 1..8 (0 is reserved for whole-day attendance and is
+   542→   542→/// rejected here). Non-null columns keep the UNIQUE constraints airtight on
+   543→   543→/// SQLite (NULLs would be treated as distinct).
+   544→   544→model TimetableSlot {
+   545→   545→  id             String   @id @default(cuid())
+   546→   546→  classSectionId String
+   547→   547→  classSection   ClassSection @relation(fields: [classSectionId], references: [id])
+   548→   548→  weekday        Int // 0..6 (شنبه..جمعه)
+   549→   549→  period         Int // 1..8
+   550→   550→  subjectId      String?
+   551→   551→  subject        Subject?    @relation(fields: [subjectId], references: [id])
+   552→   552→  staffId        String?
+   553→   553→  staff          StaffMember? @relation(fields: [staffId], references: [id])
+   554→   554→  roomName       String?
+   555→   555→  createdById    String?
+   556→   556→  createdAt      DateTime @default(now())
+   557→   557→  updatedAt      DateTime @updatedAt
+   558→   558→
+   559→   559→  // INVARIANTS: a section has at most one slot per (weekday, period);
+   560→   560→  // a teacher is in at most one place per (weekday, period).
+   561→   561→  @@unique([classSectionId, weekday, period])
+   562→   562→  @@unique([staffId, weekday, period])
+   563→   563→  @@index([classSectionId])
+   564→   564→  @@index([staffId])
+   565→   565→}
+   566→   566→
+   567→   567→/// Attendance session for one section on one date.
+   568→   568→/// period: 0 = whole-day session (ثبت روزانه), 1..8 = specific class period.
+   569→   569→/// "Unrecorded ≠ present": only SUBMITTED sessions count in statistics, and
+   570→   570→/// a student without a record row inside a submitted session is counted as
+   571→   571→/// «نا-ثبت» (not recorded) — never silently as present or absent.
+   572→   572→model AttendanceSession {
+   573→   573→  id             String   @id @default(cuid())
+   574→   574→  classSectionId String
+   575→   575→  classSection   ClassSection @relation(fields: [classSectionId], references: [id])
+   576→   576→  // date-only ISO "YYYY-MM-DD" (Asia/Kabul local date)
+   577→   577→  date           String
+   578→   578→  period         Int      @default(0) // 0 = whole day, 1..8 = period
+   579→   579→  subjectId      String?
+   580→   580→  subject        Subject? @relation(fields: [subjectId], references: [id])
+   581→   581→  // "open" | "submitted"
+   582→   582→  status         String   @default("open")
+   583→   583→  note           String?
+   584→   584→  recordedById   String?
+   585→   585→  recorder       StaffMember? @relation("AttendanceRecorder", fields: [recordedById], references: [id])
+   586→   586→  submittedById  String?
+   587→   587→  submitter      StaffMember? @relation("AttendanceSubmitter", fields: [submittedById], references: [id])
+   588→   588→  submittedAt    DateTime?
+   589→   589→  // Reopen trail: who reopened which submitted session, and why.
+   590→   590→  reopenedById   String?
+   591→   591→  reopenedReason String?
+   592→   592→  version        Int      @default(1)
+   593→   593→  createdAt      DateTime @default(now())
+   594→   594→  updatedAt      DateTime @updatedAt
+   595→   595→
+   596→   596→  records        AttendanceRecord[]
+   597→   597→
+   598→   598→  // INVARIANT: at most one session per (section, date, period) — duplicates
+   599→   599→  // are impossible at the database level, which also backs the idempotent
+   600→   600→  // "open or return existing" behavior for late/makeup recording.
+   601→   601→  @@unique([classSectionId, date, period])
+   602→   602→  @@index([classSectionId, date])
+   603→   603→  @@index([date])
+   604→   604→}
+   605→   605→
+   606→   606→model AttendanceRecord {
+   607→   607→  id        String   @id @default(cuid())
+   608→   608→  sessionId String
+   609→   609→  session   AttendanceSession @relation(fields: [sessionId], references: [id])
+   610→   610→  studentId String
+   611→   611→  student   Student  @relation(fields: [studentId], references: [id])
+   612→   612→  // "present" | "absent" | "late" | "excused"
+   613→   613→  status    String
+   614→   614→  note      String?
+   615→   615→  editedById String?
+   616→   616→  editedAt  DateTime?
+   617→   617→  createdAt DateTime @default(now())
+   618→   618→  updatedAt DateTime @updatedAt
+   619→   619→
+   620→   620→  // INVARIANT: one record per student per session.
+   621→   621→  @@unique([sessionId, studentId])
+   622→   622→  @@index([studentId])
+   623→   623→}
+   624→   624→
+   625→   625→/// Assessment (quiz / assignment / midterm / final / project) for one
+   626→   626→/// section + subject. Created by academic management; graded by the
+   627→   627→/// assigned teacher; PUBLISHING locks the grade table and snapshots the
+   628→   628→/// grading policy that was in force at publish time.
+   629→   629→model Assessment {
+   630→   630→  id             String   @id @default(cuid())
+   631→   631→  orgId          String
+   632→   632→  org            Organization @relation(fields: [orgId], references: [id])
+   633→   633→  academicYearId String
+   634→   634→  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+   635→   635→  termId         String?
+   636→   636→  term           Term?    @relation(fields: [termId], references: [id])
+   637→   637→  classSectionId String
+   638→   638→  classSection   ClassSection @relation(fields: [classSectionId], references: [id])
+   639→   639→  subjectId      String
+   640→   640→  subject        Subject      @relation(fields: [subjectId], references: [id])
+   641→   641→  // Examiner (assigned teacher) — informational + used for grade-entry checks
+   642→   642→  staffId        String?
+   643→   643→  staff          StaffMember? @relation("AssessmentExaminer", fields: [staffId], references: [id])
+   644→   644→  title          String
+   645→   645→  // "quiz" | "assignment" | "midterm" | "final" | "project"
+   646→   646→  type           String   @default("quiz")
+   647→   647→  // date-only ISO — when it takes place
+   648→   648→  date           String?
+   649→   649→  maxScore       Int      @default(100)
+   650→   650→  // Relative weight in subject aggregation (missing grades excluded).
+   651→   651→  weight         Int      @default(1)
+   652→   652→  // "draft" | "grading" | "published"
+   653→   653→  status         String   @default("draft")
+   654→   654→  // Snapshot of the grading policy in force at publish time:
+   655→   655→  // {maxScore, weight, type} — the published result never re-computes from
+   656→   656→  // later edits (Phase 3 adds full versioned policy documents).
+   657→   657→  gradingPolicy  String?  // JSON
+   658→   658→  publishedById  String?
+   659→   659→  publishedAt    DateTime?
+   660→   660→  version        Int      @default(1)
+   661→   661→  createdById    String?
+   662→   662→  createdAt      DateTime @default(now())
+   663→   663→  updatedAt      DateTime @updatedAt
+   664→   664→
+   665→   665→  grades         Grade[]
+   666→   666→
+   667→   667→  @@index([academicYearId, classSectionId])
+   668→   668→  @@index([classSectionId, subjectId])
+   669→   669→  @@index([orgId, status])
+   670→   670→}
+   671→   671→
+   672→   672→model Grade {
+   673→   673→  id           String   @id @default(cuid())
+   674→   674→  assessmentId String
+   675→   675→  assessment   Assessment @relation(fields: [assessmentId], references: [id])
+   676→   676→  studentId    String
+   677→   677→  student      Student   @relation(fields: [studentId], references: [id])
+   678→   678→  // null = MISSING grade (excluded from aggregation — never counted as zero)
+   679→   679→  score        Int?
+   680→   680→  // Exam-day absence flag (distinct from a missing grade)
+   681→   681→  isAbsent     Boolean  @default(false)
+   682→   682→  note         String?
+   683→   683→  enteredById  String?
+   684→   684→  enteredAt    DateTime?
+   685→   685→  version      Int      @default(1)
+   686→   686→  createdAt    DateTime @default(now())
+   687→   687→  updatedAt    DateTime @updatedAt
+   688→   688→
+   689→   689→  // INVARIANT: one grade row per (assessment, student).
+   690→   690→  @@unique([assessmentId, studentId])
+   691→   691→  @@index([studentId])
+   692→   692→}
+   693→   693→
+   694→   694→// ── Audit & reliability ─────────────────────────────────────────────────────
+   695→   695→
+   696→   696→model AuditEvent {
+   697→   697→  id         String   @id @default(cuid())
+   698→   698→  actorId    String?
+   699→   699→  actor      User?    @relation(fields: [actorId], references: [id])
+   700→   700→  actorName  String
+   701→   701→  action     String   // e.g. "application.enroll"
+   702→   702→  entity     String   // e.g. "Application"
+   703→   703→  entityId   String
+   704→   704→  // JSON before/after diffs — never contains passwords or tokens
+   705→   705→  before     String?  // JSON
+   706→   706→  after      String?  // JSON
+   707→   707→  reason     String?
+   708→   708→  ip         String?
+   709→   709→  at         DateTime @default(now())
+   710→   710→
+   711→   711→  @@index([entity, entityId])
+   712→   712→  @@index([at])
+   713→   713→}
+   714→   714→
+   715→   715→// Transactional outbox: committed transactions reliably trigger background
+   716→   716→// work (notifications, exports, imports). A worker drains this table.
+   717→   717→model OutboxEvent {
+   718→   718→  id          String    @id @default(cuid())
+   719→   719→  type        String    // e.g. "student.enrolled"
+   720→   720→  payload     String    @default("{}") // JSON
+   721→   721→  createdAt   DateTime  @default(now())
+   722→   722→  processedAt DateTime?
+   723→   723→  error       String?
+   724→   724→
+   725→   725→  @@index([processedAt])
+   726→   726→}
+   727→   727→
+   728→   728→model Notification {
+   729→   729→  id        String   @id @default(cuid())
+   730→   730→  userId    String
+   731→   731→  user      User     @relation(fields: [userId], references: [id])
+   732→   732→  type      String   // "application.submitted" | "student.enrolled" | ...
+   733→   733→  title     String
+   734→   734→  body      String
+   735→   735→  link      String?
+   736→   736→  isRead    Boolean  @default(false)
+   737→   737→  createdAt DateTime @default(now())
+   738→   738→
+   739→   739→  @@index([userId, isRead])
+   740→   740→}
+   741→   741→

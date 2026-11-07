@@ -48,6 +48,8 @@ export function authContextPublic(ctx: AuthContext | null) {
       sectionIds: g.sectionIds,
     })),
     branchId: ctx.branchId,
+    ownBranchIds: ctx.ownBranchIds,
+    isCrossBranch: ctx.isCrossBranch,
   };
 }
 

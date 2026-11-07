@@ -165,3 +165,81 @@ bun run test:e2e        # 47 API checks (requires dev server on :3000)
 Note: `tests/e2e_api.py` mutates the demo database (creates a test
 application/student). Re-run `bun run db:seed` afterwards for a clean demo
 state — this was done before delivery.
+
+## 7. Phase 3 — finance & branch isolation (2026-11-07)
+
+Scope of this run: fee structures, discounts, invoices, payments, expenses,
+payroll, finance reports, and the strict branch-isolation policy across the
+whole API.
+
+### 7.1 Type safety & lint
+
+- `bunx tsc --noEmit` — clean (0 errors) across server, client and seed.
+- `bunx eslint src` — clean (0 problems), including the new
+  `src/features/finance/*` views and `src/server/finance`.
+
+### 7.2 Unit tests (`bun test`) — 63 pass / 0 fail
+
+- `tests/rbac.test.ts` — 13 roles; branch-isolation matrix assertions
+  (only admin/gm hold all-scope data grants; meta permissions never
+  branch-scoped; general_manager vs admin separation of duties; finance
+  role grants incl. payments.collect/void split).
+- `tests/phase3.test.ts` (new, 20 checks) — Solar Hijri month keys/labels/
+  ranges (end-exclusive), year rollover in `recentMonthKeys`; diram↔AFN
+  formatting (`۱٬۲۰۰ افغانی`, Persian digits, grouping) and `afnToDiram`
+  round-trips (integers only); fail-closed scope engine semantics
+  (parameterless branch grant → nothing; forged context ignored;
+  admin/gm cross-branch); invoice status derivation (missing ≠ paid).
+- Phase 1/2 suites (jalali, phase2) unchanged and green.
+
+### 7.3 End-to-end API (`python3 tests/e2e_api.py`) — 140 pass / 0 fail
+
+New section [11] — finance flows: fee list is branch-scoped (second-branch
+fee hidden); bulk invoice issue for an untouched month succeeds and
+**re-issue is idempotent** (created 0 / skipped all); discount snapshot
+appears on the staff-child invoice; partial payment with sequential receipt;
+**overpayment rejected 400**; invoice → «بخشی پرداخت‌شده» → void restores
+the balance; cashier collects but cannot void (403); paying the approved
+payroll run books an `E-…` salaries expense; double-pay rejected; finance
+reports render a six-month series with outstanding totals.
+
+New section [12] — branch isolation: `me` exposes
+`ownBranchIds`/`isCrossBranch`; registrar (کارتهٔ نو) and manager2 (خوشحال
+خان) see **disjoint** student lists that partition the admin total exactly;
+registrar gets 403 opening a second-branch student profile, gm gets 200;
+**forged `x-maktabyar-branch` header ignored** for branch-bound users;
+admin's branch switcher narrows their list to the second branch; sections,
+staff, users, invoices all branch-scoped; manager read-only on finance
+(void → 403); parent sees only their children's invoices.
+
+Two pre-existing Phase-1 checks were adapted (not weakened): the admission
+workflow now uses a grade-6 section (registrar's own branch) and adds two
+new assertions proving grade-7 (other-branch) sections are invisible.
+
+### 7.4 Browser verification (agent-browser, Chromium)
+
+- Login as `finance` → `#/finance/invoices`: KPI cards with Persian-digit
+  money («۴۱٬۷۰۰»), table with `F-۱۴۰۵-…` numbers, top-bar branch badge
+  «شعبهٔ مرکزی — کارتهٔ نو».
+- `#/finance/fees|payments|expenses|payroll|reports` all render without
+  runtime errors (one `faDate`-with-instant crash found in payroll/fees
+  during this pass and fixed — instants now use
+  `formatInstantJalaliDateTime`).
+- Login as `admin` → branch switcher («همه شعبه‌ها» → «شعبهٔ دوم — خوشحال
+  خان») narrows the invoice list to second-branch students instantly
+  (localStorage context header + full query invalidation).
+- The Radix a11y warning «DialogContent requires a DialogTitle» (reported
+  by the user on the exams gradebook loading state) is fixed; all dialogs
+  app-wide now carry a `DialogTitle`.
+
+### 7.5 Reproduction
+
+```bash
+bun run typecheck && bun run lint
+bun run test            # 63 unit tests
+bun run test:e2e        # 140 API checks (requires dev server on :3000)
+bun run db:seed         # restore the clean demo state afterwards
+```
+
+`tests/e2e_api.py` mutates the demo database (test application/student,
+سنبله invoices, payroll payments) — the DB was re-seeded after this run.

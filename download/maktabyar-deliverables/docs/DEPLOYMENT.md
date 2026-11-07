@@ -110,3 +110,39 @@ Proxy requirements (nginx/Caddy defaults are fine):
 - The outbox table is drained by a worker (in-process drain in the sandbox;
   a `apps/worker` process in production) — monitor `processedAt IS NULL`
   age as an alert.
+
+## 7. Branch isolation & multi-branch operation (Phase 3)
+
+The system is multi-branch: students, applications, staff, class sections,
+timetables, attendance, assessments and every finance row (fee structures,
+invoices, payments, expenses, payroll runs) carry a `branchId`.
+
+**Policy (enforced server-side on every endpoint):**
+
+- Every operational user is bound to a branch via `UserRole.branchId`.
+  Branch-bound roles see and touch **only their own branch's data**.
+- A branch-scoped grant without a concrete `UserRole.branchId` grants
+  **nothing** (fail closed) — a mis-assigned user sees an empty system, not
+  the whole organization.
+- Only `admin` and `general_manager` (مدیر عام) hold all-scope data grants
+  and may work across branches. The SPA sends the active branch context in
+  the `x-maktabyar-branch` request header; the server re-validates it:
+  - cross-branch users → any active org branch (or no header = all branches);
+  - branch-bound users → silently ignored unless it is one of their own
+    branches (a forged header cannot widen scope).
+
+**Operations checklist when adding a branch:**
+
+1. Create the branch (`POST /api/v1/branches`, `academic.manage`).
+2. Create its class sections (grades) for the current academic year.
+3. Create branch-bound users: assign the role **with the branchId** —
+   users created without a branchId on a branch-scoped role see nothing.
+4. Register the branch's staff with base salaries (`salaryDiram`) so
+   payroll can generate runs.
+5. Fee structures may be org-wide (branchId null, visible everywhere) or
+   branch-specific; invoices/payroll always stamp the concrete branch.
+
+**Troubleshooting "empty lists" for a user:** their role is branch-scoped
+but `UserRole.branchId` is null → assign the branch in Settings → Users
+(اجازهٔ `users.manage` لازم است). The top bar shows the active branch; for
+admin/gm it is a switcher («همه شعبه‌ها» = org-wide view).

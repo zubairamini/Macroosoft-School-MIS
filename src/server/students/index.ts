@@ -103,27 +103,34 @@ export async function listStudents(
     return { items: [], meta: { total: 0, page: filters.page, pageSize: filters.pageSize } };
   }
 
-  const where: Prisma.StudentWhereInput = { ...scopeWhere };
+  // Scope conditions are preserved via AND — filters must never widen the
+  // scope (branch isolation) or clobber the scope's OR branches.
+  const and: Prisma.StudentWhereInput[] = [scopeWhere];
   if (filters.status && STUDENT_STATUSES.includes(filters.status as StudentStatus)) {
-    where.status = filters.status;
+    and.push({ status: filters.status });
   }
   if (filters.gradeLevelId || filters.classSectionId || filters.academicYearId) {
-    where.enrollments = {
-      some: {
-        ...(filters.academicYearId ? { academicYearId: filters.academicYearId } : {}),
-        ...(filters.gradeLevelId ? { gradeLevelId: filters.gradeLevelId } : {}),
-        ...(filters.classSectionId ? { classSectionId: filters.classSectionId } : {}),
+    and.push({
+      enrollments: {
+        some: {
+          ...(filters.academicYearId ? { academicYearId: filters.academicYearId } : {}),
+          ...(filters.gradeLevelId ? { gradeLevelId: filters.gradeLevelId } : {}),
+          ...(filters.classSectionId ? { classSectionId: filters.classSectionId } : {}),
+        },
       },
-    };
+    });
   }
   if (filters.q) {
     const nq = normalizeDariText(filters.q);
-    where.OR = [
-      { studentNumber: { contains: filters.q } },
-      { personal: { contains: filters.q } },
-      ...(nq !== filters.q ? [{ personal: { contains: nq } }] : []),
-    ];
+    and.push({
+      OR: [
+        { studentNumber: { contains: filters.q } },
+        { personal: { contains: filters.q } },
+        ...(nq !== filters.q ? [{ personal: { contains: nq } }] : []),
+      ],
+    });
   }
+  const where: Prisma.StudentWhereInput = { AND: and };
 
   const currentYear = await db.academicYear.findFirst({
     where: { isCurrent: true },

@@ -9,7 +9,7 @@ Nothing here is hidden behind marketing language.
 |---|---|---|
 | 1 | Architecture, schema, auth, permissions, localization, design system, school setup, admissions, student profiles | ✅ **Delivered & verified** (this release) |
 | 2 | Staff register, teaching assignments, timetables, attendance, exams & grades, report cards | ✅ **Delivered & verified** (this release) |
-| 3 | Fees, accounting, expenses, payroll, financial reports | 🔜 Not started (module toggle exists) |
+| 3 | Fees & discounts, invoices, payments/receipts, expenses, payroll, financial reports, **strict branch isolation** | ✅ **Delivered & verified** (this release) |
 | 4 | Textbooks, library, cards/documents/printing, communications, portals | 🔜 Not started |
 | 5 | Optional services, year-end closing, performance, security hardening | 🔜 Not started |
 
@@ -95,12 +95,50 @@ green.
   schema enforces uniqueness per (section, date, period); the shipped UI
   records whole-day sessions (period 0).
 
-## Recommended next steps (Phase 3 opening moves)
+## Phase 3 — delivered in this release (2026-11-07)
 
-1. Extract `apps/api` (NestJS) + `apps/worker`; keep the same schema.
-2. Fee plans + idempotent invoice generation + cash collection with
-   idempotency keys + printable receipts.
-3. Double-entry accounting: journal entries must balance; posted sets are
-   immutable, corrections via approved reversals.
-4. Payroll (module toggle exists).
+Fee structures (per grade/branch/period — monthly, termly, one-time),
+student discounts (percent or fixed; the largest active discount is
+snapshotted at issue time), **idempotent bulk invoice issue** (one live
+invoice per student per period; re-issue skips), payments with sequential
+receipts (overpayment rejected transactionally; missing payment ≠ paid),
+void-with-reason corrections (payments, invoices, expenses — no deletes,
+everything audited), expenses ledger with categories, **payroll runs**
+(generated from staff base salaries, adjustable while draft, approve → pay
+which automatically books a «معاشات» expense), and finance reports
+(monthly KPIs, six-month income-vs-expense series, top debtors).
+
+**Branch isolation** (the headline policy): every user is bound to a branch
+via `UserRole.branchId`; branch-scoped grants without a concrete branch now
+fail closed (before: "all branches"). Only `admin` and the new
+`general_manager` (مدیر عام) role cross branch boundaries — with a branch
+switcher in the top bar («همه شعبه‌ها» + each branch). A forged
+`x-maktabyar-branch` header from a branch-bound user is ignored
+server-side. Isolation is enforced on every list endpoint (students,
+applications, staff, sections, timetable, attendance, assessments, users,
+invoices, payments, expenses, payroll) and on single-record access paths.
+
+Money is stored as integer diram (100 diram = 1 AFN) — never floats.
+63 unit tests + 140 e2e checks green.
+
+### Remaining Phase-3 polish (not blocking)
+
+- Double-entry accounting (journal entries that must balance) — the current
+  ledger is a cash-book view (payments + expenses), which is what Afghan
+  private schools asked for first; a full chart of accounts remains open.
+- SMS/e-receipt delivery for parents (outbox events are written; the worker
+  integration is Phase 4).
+- Fee installment plans (N installments per invoice) — currently one
+  invoice = one net amount with arbitrary partial payments.
+
+## Recommended next steps (Phase 4 opening moves)
+
+1. Library & textbooks (catalog, copies, lending, textbook distribution
+   linked to fees) — module toggle exists.
+2. Announcements & messaging (branch/class-scoped, read states, SMS/email
+   worker on the existing outbox).
+3. Student/parent portal surfaces for finance (invoice detail is already
+   guardian-scoped; a dedicated portal layout remains).
+4. Cards/documents printing framework (report cards exist; formal print
+   templates with school letterhead next).
 5. Custom roles UI + export jobs (carry-over from Phase 2 polish).

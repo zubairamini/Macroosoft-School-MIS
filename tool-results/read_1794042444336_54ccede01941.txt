@@ -1,0 +1,905 @@
+     1→// Synthetic Dari demonstration data for مکتب‌یار (MaktabYar).
+     2→// All names, numbers, and records are FICTIONAL demonstration data.
+     3→//
+     4→// Run with:  bunx tsx prisma/seed.ts   (or)   bun run db:seed
+     5→
+     6→import { PrismaClient } from "@prisma/client";
+     7→import { hashPassword } from "../src/server/auth/password";
+     8→
+     9→const db = new PrismaClient();
+    10→
+    11→const GRADE_NAMES = [
+    12→  "صنف اول", "صنف دوم", "صنف سوم", "صنف چهارم", "صنف پنجم", "صنف ششم",
+    13→  "صنف هفتم", "صنف هشتم", "صنف نهم", "صنف دهم", "صنف یازدهم", "صنف دوازدهم",
+    14→];
+    15→
+    16→const SECTION_LABELS = ["الف", "ب", "ج"];
+    17→
+    18→interface SeedStudent {
+    19→  firstName: string;
+    20→  fatherName: string;
+    21→  grandfatherName: string;
+    22→  gender: "male" | "female";
+    23→  birthDate: string; // ISO date-only
+    24→  birthPlace: string;
+    25→  grade: number;
+    26→  sectionIdx: number;
+    27→  guardians: Array<{
+    28→    fullName: string;
+    29→    relationship: string;
+    30→    phone: string;
+    31→    occupation?: string;
+    32→    isPrimary: boolean;
+    33→    portalAccess?: boolean;
+    34→  }>;
+    35→}
+    36→
+    37→// Fictional students — synthetic Dari demo data.
+    38→const STUDENTS: SeedStudent[] = [
+    39→  {
+    40→    firstName: "احمد//رضا", fatherName: "محمد//نور", grandfatherName: "غلام//حضرت",
+    41→    gender: "male", birthDate: "2014-03-25", birthPlace: "کابل", grade: 5, sectionIdx: 0,
+    42→    guardians: [
+    43→      { fullName: "محمد//نور احمدی", relationship: "پدر", phone: "+93701234501", occupation: "معمار", isPrimary: true, portalAccess: true },
+    44→      { fullName: "مریم//خانم احمدی", relationship: "مادر", phone: "+93701234502", isPrimary: false },
+    45→    ],
+    46→  },
+    47→  {
+    48→    firstName: "فاطمه", fatherName: "عبدال//رحمن", grandfatherName: "سید//قاسم",
+    49→    gender: "female", birthDate: "2013-11-02", birthPlace: "کابل", grade: 6, sectionIdx: 1,
+    50→    guardians: [
+    51→      { fullName: "عبدال//رحمن رحیمی", relationship: "پدر", phone: "+93701234503", occupation: "معلم", isPrimary: true, portalAccess: true },
+    52→    ],
+    53→  },
+    54→  {
+    55→    firstName: "زهرا", fatherName: "حسین", grandfatherName: "علی//اکبر",
+    56→    gender: "female", birthDate: "2015-06-18", birthPlace: "کابل", grade: 4, sectionIdx: 0,
+    57→    guardians: [
+    58→      { fullName: "حسین یوسفی", relationship: "پدر", phone: "+93701234504", occupation: "تاجر", isPrimary: true, portalAccess: true },
+    59→      { fullName: "نبیت یوسفی", relationship: "مادر", phone: "+93701234505", isPrimary: false },
+    60→    ],
+    61→  },
+    62→  {
+    63→    firstName: "عمر", fatherName: "دوست//محمد", grandfatherName: "نظر//محمد",
+    64→    gender: "male", birthDate: "2012-01-30", birthPlace: "پروان", grade: 7, sectionIdx: 2,
+    65→    guardians: [
+    66→      { fullName: "دوست//محمد کریمی", relationship: "پدر", phone: "+93701234506", occupation: "کشاورز", isPrimary: true },
+    67→    ],
+    68→  },
+    69→  {
+    70→    firstName: "نرگس", fatherName: "شاه//محمد", grandfatherName: "میرزا//حسین",
+    71→    gender: "female", birthDate: "2014-09-12", birthPlace: "کابل", grade: 5, sectionIdx: 1,
+    72→    guardians: [
+    73→      { fullName: "شاه//محمد صافی", relationship: "پدر", phone: "+93701234507", occupation: "کارمند", isPrimary: true, portalAccess: true },
+    74→    ],
+    75→  },
+    76→  {
+    77→    firstName: "سمیع//الله", fatherName: "انعام//الله", grandfatherName: "فضل//احمد",
+    78→    gender: "male", birthDate: "2011-04-08", birthPlace: "لوگر", grade: 8, sectionIdx: 0,
+    79→    guardians: [
+    80→      { fullName: "انعام//الله نوری", relationship: "پدر", phone: "+93701234508", occupation: "خیاط", isPrimary: true },
+    81→    ],
+    82→  },
+    83→  {
+    84→    firstName: "شکیبا", fatherName: "رحمت//الله", grandfatherName: "نعمت//الله",
+    85→    gender: "female", birthDate: "2016-02-21", birthPlace: "کابل", grade: 3, sectionIdx: 0,
+    86→    guardians: [
+    87→      { fullName: "رحمت//الله حکیمی", relationship: "پدر", phone: "+93701234509", occupation: "راننده", isPrimary: true },
+    88→    ],
+    89→  },
+    90→  {
+    91→    firstName: "یاسر", fatherName: "بصیر//احمد", grandfatherName: "عبدال//واحد",
+    92→    gender: "male", birthDate: "2010-12-05", birthPlace: "کابل", grade: 9, sectionIdx: 1,
+    93→    guardians: [
+    94→      { fullName: "بصیر//احمد بشیری", relationship: "پدر", phone: "+93701234510", occupation: "مهندس", isPrimary: true, portalAccess: true },
+    95→    ],
+    96→  },
+    97→];
+    98→
+    99→// Sibling pair sharing one guardian (demonstrates multi-child guardians).
+   100→const SIBLING_GUARDIAN = {
+   101→  fullName: "فضل//کریم زمردی",
+   102→  relationship: "پدر",
+   103→  phone: "+93701234520",
+   104→  occupation: "صحاف",
+   105→  isPrimary: true,
+   106→  portalAccess: true,
+   107→};
+   108→
+   109→const SIBLINGS: SeedStudent[] = [
+   110→  {
+   111→    firstName: "مینا", fatherName: "فضل//کریم", grandfatherName: "نصرت//الله",
+   112→    gender: "female", birthDate: "2015-07-14", birthPlace: "کابل", grade: 4, sectionIdx: 1,
+   113→    guardians: [{ ...SIBLING_GUARDIAN }],
+   114→  },
+   115→  {
+   116→    firstName: "وحید", fatherName: "فضل//کریم", grandfatherName: "نصرت//الله",
+   117→    gender: "male", birthDate: "2013-03-03", birthPlace: "کابل", grade: 6, sectionIdx: 2,
+   118→    guardians: [{ ...SIBLING_GUARDIAN }],
+   119→  },
+   120→];
+   121→
+   122→// Applications in various workflow states (demonstration of the funnel).
+   123→const APPLICATIONS = [
+   124→  {
+   125→    firstName: "هدیه", fatherName: "نجیب//الله", grandfatherName: "صمد",
+   126→    gender: "female" as const, birthDate: "2017-05-09", birthPlace: "کابل",
+   127→    grade: 2, phone: "+93701234531",
+   128→    guardian: { fullName: "نجیب//الله عظیمی", relationship: "پدر", phone: "+93701234531", isPrimary: true },
+   129→    status: "draft" as const,
+   130→  },
+   131→  {
+   132→    firstName: "الیم‌خان", fatherName: "دلاور", grandfatherName: "خوشحال",
+   133→    gender: "male" as const, birthDate: "2016-10-11", birthPlace: "کابل",
+   134→    grade: 3, phone: "+93701234532",
+   135→    guardian: { fullName: "دلاور خان", relationship: "پدر", phone: "+93701234532", isPrimary: true },
+   136→    status: "submitted" as const,
+   137→  },
+   138→  {
+   139→    firstName: "روشنک", fatherName: "فرهاد", grandfatherName: "ظفر",
+   140→    gender: "female" as const, birthDate: "2015-08-25", birthPlace: "کابل",
+   141→    grade: 4, phone: "+93701234533",
+   142→    guardian: { fullName: "فرهاد صدیقی", relationship: "پدر", phone: "+93701234533", isPrimary: true, portalAccess: true },
+   143→    status: "under_review" as const,
+   144→  },
+   145→  {
+   146→    firstName: "جواد", fatherName: "محمود", grandfatherName: "اسد//الله",
+   147→    gender: "male" as const, birthDate: "2012-07-19", birthPlace: "غزنی",
+   148→    grade: 7, phone: "+93701234534",
+   149→    guardian: { fullName: "محمود رحمانی", relationship: "پدر", phone: "+93701234534", isPrimary: true },
+   150→    status: "approved" as const,
+   151→  },
+   152→  {
+   153→    firstName: "آرزو", fatherName: "کمال//الدین", grandfatherName: "جمال",
+   154→    gender: "female" as const, birthDate: "2011-09-30", birthPlace: "کابل",
+   155→    grade: 8, phone: "+93701234535",
+   156→    guardian: { fullName: "کمال//الدین امینی", relationship: "پدر", phone: "+93701234535", isPrimary: true },
+   157→    status: "rejected" as const,
+   158→    note: "ظرفیت صنف هشتم در این سال تعلیمی تکمیل است؛ برای سال بعد ثبت‌النام شود.",
+   159→  },
+   160→];
+   161→
+   162→// Phase-2 extra students so attendance rosters & gradebooks look real.
+   163→const P2_STUDENTS: SeedStudent[] = [
+   164→  {
+   165→    firstName: "مهدی", fatherName: "شریف", grandfatherName: "بهرام",
+   166→    gender: "male", birthDate: "2015-04-14", birthPlace: "کابل", grade: 4, sectionIdx: 0,
+   167→    guardians: [{ fullName: "شریف سلطانی", relationship: "پدر", phone: "+93701234541", occupation: "برق‌کار", isPrimary: true }],
+   168→  },
+   169→  {
+   170→    firstName: "سویا", fatherName: "طاهر", grandfatherName: "قربان",
+   171→    gender: "female", birthDate: "2015-09-03", birthPlace: "کابل", grade: 4, sectionIdx: 0,
+   172→    guardians: [{ fullName: "طاهر مهدوی", relationship: "پدر", phone: "+93701234542", occupation: "خانم خانه", isPrimary: true }],
+   173→  },
+   174→  {
+   175→    firstName: "ایلت", fatherName: "ناصر", grandfatherName: "شریف",
+   176→    gender: "female", birthDate: "2016-01-19", birthPlace: "کابل", grade: 4, sectionIdx: 0,
+   177→    guardians: [{ fullName: "ناصر رحیم", relationship: "پدر", phone: "+93701234543", occupation: "معلم", isPrimary: true }],
+   178→  },
+   179→  {
+   180→    firstName: "برهان", fatherName: "اله‌داد", grandfatherName: "میرزا",
+   181→    gender: "male", birthDate: "2014-06-30", birthPlace: "کابل", grade: 5, sectionIdx: 0,
+   182→    guardians: [{ fullName: "اله‌داد امین", relationship: "پدر", phone: "+93701234544", occupation: "تاجر", isPrimary: true }],
+   183→  },
+   184→  {
+   185→    firstName: "ذکیه", fatherName: "غلام‌حیدر", grandfatherName: "فوز",
+   186→    gender: "female", birthDate: "2014-11-11", birthPlace: "کابل", grade: 5, sectionIdx: 0,
+   187→    guardians: [{ fullName: "غلام‌حیدر فوزی", relationship: "پدر", phone: "+93701234545", occupation: "خیاط", isPrimary: true }],
+   188→  },
+   189→];
+   190→
+   191→async function main() {
+   192→  console.log("🌱 Seeding synthetic Dari demonstration data…");
+   193→
+   194→  // Clean slate (demo database only — production uses migrations).
+   195→  await db.$transaction([
+   196→    db.notification.deleteMany(),
+   197→    db.outboxEvent.deleteMany(),
+   198→    db.auditEvent.deleteMany(),
+   199→    db.grade.deleteMany(),
+   200→    db.assessment.deleteMany(),
+   201→    db.attendanceRecord.deleteMany(),
+   202→    db.attendanceSession.deleteMany(),
+   203→    db.timetableSlot.deleteMany(),
+   204→    db.teachingAssignment.deleteMany(),
+   205→    db.staffMember.deleteMany(),
+   206→    db.studentDocument.deleteMany(),
+   207→    db.enrollment.deleteMany(),
+   208→    db.studentGuardian.deleteMany(),
+   209→    db.student.deleteMany(),
+   210→    db.guardian.deleteMany(),
+   211→    db.application.deleteMany(),
+   212→    db.classSection.deleteMany(),
+   213→    db.term.deleteMany(),
+   214→    db.subject.deleteMany(),
+   215→    db.gradeLevel.deleteMany(),
+   216→    db.academicYear.deleteMany(),
+   217→    db.room.deleteMany(),
+   218→    db.shift.deleteMany(),
+   219→    db.userRole.deleteMany(),
+   220→    db.session.deleteMany(),
+   221→    db.loginAttempt.deleteMany(),
+   222→    db.user.deleteMany(),
+   223→    db.setting.deleteMany(),
+   224→    db.counter.deleteMany(),
+   225→    db.branch.deleteMany(),
+   226→    db.organization.deleteMany(),
+   227→  ]);
+   228→
+   229→  // ── Organization & branches ──────────────────────────────────────────────
+   230→  const org = await db.organization.create({
+   231→    data: {
+   232→      productName: "مکتب‌یار",
+   233→      name: "مکتب خصوصی روشن",
+   234→      schoolType: "private",
+   235→      province: "کابل",
+   236→      district: "ناحیهٔ ششم",
+   237→      address: "سرک پانزدهم، کارتهٔ نو، کابل",
+   238→      phone: "+93701112233",
+   239→      emisCode: "EMIS-000000",
+   240→      registrationNumber: "REG-1405-001",
+   241→      reportHeading: "ریاست تعلیم و تربیهٔ ولایت کابل — ادارهٔ تعلیم ناحیهٔ ششم",
+   242→      reportFooter: "مکتب خصوصی روشن — کابل",
+   243→      // The demo ships fully configured; the setup wizard is exercised via
+   244→      // tests and is shown again on a fresh database.
+   245→      isConfigured: true,
+   246→    },
+   247→  });
+   248→
+   249→  const mainBranch = await db.branch.create({
+   250→    data: {
+   251→      orgId: org.id,
+   252→      name: "شعبهٔ مرکزی — کارتهٔ نو",
+   253→      code: "MAIN",
+   254→      province: "کابل",
+   255→      district: "ناحیهٔ ششم",
+   256→      address: "سرک پانزدهم، کارتهٔ نو",
+   257→      phone: "+93701112233",
+   258→    },
+   259→  });
+   260→  const secondBranch = await db.branch.create({
+   261→    data: {
+   262→      orgId: org.id,
+   263→      name: "شعبهٔ دوم — خوشحال خان",
+   264→      code: "KHK",
+   265→      province: "کابل",
+   266→      district: "ناحیهٔ پنجم",
+   267→      address: "خوشحال خان، سرک دوازدهم",
+   268→      phone: "+93701112244",
+   269→    },
+   270→  });
+   271→
+   272→  // ── Academic year ۱۴۰۵ (Solar Hijri) ─────────────────────────────────────
+   273→  const year1405 = await db.academicYear.create({
+   274→    data: {
+   275→      orgId: org.id,
+   276→      name: "۱۴۰۵",
+   277→      // 1405 Solar Hijri ≈ 2026-03-21 .. 2027-03-20
+   278→      startDate: "2026-03-21",
+   279→      endDate: "2027-03-20",
+   280→      isCurrent: true,
+   281→      status: "active",
+   282→    },
+   283→  });
+   284→  await db.term.createMany({
+   285→    data: [
+   286→      { academicYearId: year1405.id, name: "نیم‌سال اول", index: 1, startDate: "2026-03-21", endDate: "2026-09-22" },
+   287→      { academicYearId: year1405.id, name: "نیم‌سال دوم", index: 2, startDate: "2026-09-23", endDate: "2027-03-20" },
+   288→    ],
+   289→  });
+   290→
+   291→  // ── Grades 1..12 ─────────────────────────────────────────────────────────
+   292→  const grades = await Promise.all(
+   293→    GRADE_NAMES.map((nameDari, i) =>
+   294→      db.gradeLevel.create({ data: { orgId: org.id, level: i + 1, nameDari } }),
+   295→    ),
+   296→  );
+   297→
+   298→  // ── Shifts ───────────────────────────────────────────────────────────────
+   299→  const morning = await db.shift.create({
+   300→    data: { orgId: org.id, name: "صبح", startTime: "07:00", endTime: "11:30" },
+   301→  });
+   302→  const noon = await db.shift.create({
+   303→    data: { orgId: org.id, name: "چاشت", startTime: "12:00", endTime: "16:30" },
+   304→  });
+   305→
+   306→  // ── Class sections (grades 1–9, two-three sections each) ────────────────
+   307→  const sections: Record<string, { id: string; grade: number; label: string }> = {};
+   308→  for (const g of grades) {
+   309→    const count = g.level <= 9 ? 3 : 2;
+   310→    for (let i = 0; i < count; i++) {
+   311→      const label = SECTION_LABELS[i] ?? `شعبه-${i + 1}`;
+   312→      const s = await db.classSection.create({
+   313→        data: {
+   314→          academicYearId: year1405.id,
+   315→          gradeLevelId: g.id,
+   316→          branchId: g.level <= 6 ? mainBranch.id : secondBranch.id,
+   317→          shiftId: g.level <= 6 ? morning.id : noon.id,
+   318→          roomName: `اتاق ${g.level}${i + 1}`,
+   319→          capacity: 30,
+   320→          label,
+   321→        },
+   322→      });
+   323→      sections[`${g.level}-${i}`] = { id: s.id, grade: g.level, label };
+   324→    }
+   325→  }
+   326→
+   327→  // ── Subjects (configurable, not claimed as ministry curriculum) ─────────
+   328→  const subjects = [
+   329→    { nameDari: "دری", code: "DARI", grades: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+   330→    { nameDari: "ریاضی", code: "MATH", grades: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+   331→    { nameDari: "علوم", code: "SCI", grades: [4, 5, 6, 7, 8] },
+   332→    { nameDari: "جغرافیا", code: "GEO", grades: [5, 6, 7, 8, 9] },
+   333→    { nameDari: "تاریخ", code: "HIST", grades: [5, 6, 7, 8, 9] },
+   334→    { nameDari: "انگلیسی", code: "ENG", grades: [4, 5, 6, 7, 8, 9, 10, 11, 12] },
+   335→    { nameDari: "قرآن و تعلیمات اسلامی", code: "ISLAM", grades: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
+   336→    { nameDari: "معلومات عمومی", code: "GEN", grades: [7, 8, 9] },
+   337→    { nameDari: "کمپیوتر", code: "ICT", grades: [7, 8, 9, 10, 11, 12] },
+   338→  ];
+   339→  for (const s of subjects) {
+   340→    await db.subject.create({
+   341→      data: { orgId: org.id, nameDari: s.nameDari, code: s.code, grades: JSON.stringify(s.grades) },
+   342→    });
+   343→  }
+   344→
+   345→  // ── Users & roles ────────────────────────────────────────────────────────
+   346→  const users = [
+   347→    { username: "admin", password: "Admin1234", fullName: "انجنیر احمد شاه ولی‌زاده", role: "admin", branch: null },
+   348→    { username: "manager", password: "Manager1234", fullName: "استاد عبدالقادر برات", role: "manager", branch: null },
+   349→    { username: "academic", password: "Academic1234", fullName: "استاد سمیع‌الله نوری", role: "academic_manager", branch: null },
+   350→    { username: "registrar", password: "Registrar1234", fullName: "محترمه نعیمه صمدی", role: "registrar", branch: null },
+   351→    { username: "finance", password: "Finance1234", fullName: "محترم حبیب‌الله رفیعی", role: "finance_officer", branch: null },
+   352→    { username: "cashier", password: "Cashier1234", fullName: "محترمه لیلا احمدی", role: "cashier", branch: null },
+   353→    { username: "teacher", password: "Teacher1234", fullName: "استاد خالد حسینی", role: "teacher", branch: mainBranch.id },
+   354→    { username: "librarian", password: "Library1234", fullName: "محترم ظاهر شریفی", role: "librarian", branch: null },
+   355→    { username: "hr", password: "Hr12345678", fullName: "محترمه صغری امامی", role: "hr_officer", branch: null },
+   356→    { username: "auditor", password: "Auditor1234", fullName: "محترم ناصر مهدوی", role: "auditor", branch: null },
+   357→  ];
+   358→  const userRows: Record<string, { id: string }> = {};
+   359→  for (const u of users) {
+   360→    const row = await db.user.create({
+   361→      data: {
+   362→        username: u.username,
+   363→        passwordHash: hashPassword(u.password),
+   364→        fullName: u.fullName,
+   365→        phone: `+93700${u.username.length}00${Math.floor(Math.random() * 90 + 10)}`,
+   366→        isActive: true,
+   367→      },
+   368→    });
+   369→    userRows[u.username] = row;
+   370→    await db.userRole.create({
+   371→      data: {
+   372→        userId: row.id,
+   373→        roleKey: u.role,
+   374→        branchId: u.branch,
+   375→        sectionIds: JSON.stringify([]),
+   376→      },
+   377→    });
+   378→  }
+   379→
+   380→  // ── Students + guardians + enrollments ───────────────────────────────────
+   381→  const guardianByPhone: Record<string, { id: string }> = {};
+   382→  let studentSeq = 0;
+   383→  const all = [...STUDENTS, ...SIBLINGS, ...P2_STUDENTS];
+   384→  for (const s of all) {
+   385→    studentSeq += 1;
+   386→    const studentNumber = `S-1405-${String(studentSeq).padStart(4, "0")}`;
+   387→    const student = await db.student.create({
+   388→      data: {
+   389→        orgId: org.id,
+   390→        studentNumber,
+   391→        personal: JSON.stringify({
+   392→          firstName: s.firstName,
+   393→          fatherName: s.fatherName,
+   394→          grandfatherName: s.grandfatherName,
+   395→          gender: s.gender,
+   396→          birthDate: s.birthDate,
+   397→          birthPlace: s.birthPlace,
+   398→          phone: null,
+   399→          address: "کابل، افغانستان",
+   400→          previousSchool: "—",
+   401→          previousGrade: s.grade - 1,
+   402→          healthNotes: studentSeq % 4 === 0 ? "حساسیت فصلی؛ در بهار نیاز به توجه." : null,
+   403→        }),
+   404→        status: "active",
+   405→        createdById: userRows.registrar.id,
+   406→      },
+   407→    });
+   408→    for (const g of s.guardians) {
+   409→      let guardianRow = guardianByPhone[g.phone];
+   410→      if (!guardianRow) {
+   411→        guardianRow = await db.guardian.create({
+   412→          data: {
+   413→            orgId: org.id,
+   414→            fullName: g.fullName,
+   415→            relationship: g.relationship,
+   416→            phone: g.phone,
+   417→            occupation: g.occupation ?? null,
+   418→            address: "کابل، افغانستان",
+   419→            canPickUp: true,
+   420→            portalAccess: g.portalAccess ?? false,
+   421→          },
+   422→        });
+   423→        guardianByPhone[g.phone] = guardianRow;
+   424→      }
+   425→      await db.studentGuardian.create({
+   426→        data: {
+   427→          studentId: student.id,
+   428→          guardianId: guardianRow.id,
+   429→          relationship: g.relationship,
+   430→          isPrimary: g.isPrimary,
+   431→          contactRights: true,
+   432→        },
+   433→      });
+   434→    }
+   435→    const sec = sections[`${s.grade}-${s.sectionIdx}`] ?? sections[`${s.grade}-0`];
+   436→    await db.enrollment.create({
+   437→      data: {
+   438→        studentId: student.id,
+   439→        academicYearId: year1405.id,
+   440→        gradeLevelId: grades[s.grade - 1].id,
+   441→        classSectionId: sec.id,
+   442→        rollNumber: studentSeq,
+   443→        enrolledOn: "2026-03-25",
+   444→        status: "active",
+   445→      },
+   446→    });
+   447→    await db.studentDocument.createMany({
+   448→      data: [
+   449→        { studentId: student.id, type: "tazkira", title: "کاپی تذکره", isVerified: true, uploadedById: userRows.registrar.id },
+   450→        { studentId: student.id, type: "photo", title: "عکس پرسنلی", isVerified: true, uploadedById: userRows.registrar.id },
+   451→      ],
+   452→    });
+   453→  }
+   454→
+   455→  // Teacher assignment: خالد حسینی teaches 4-الف, 4-ب and 5-الف.
+   456→  const teacherSections = [sections["4-0"].id, sections["4-1"].id, sections["5-0"].id];
+   457→  await db.userRole.updateMany({
+   458→    where: { userId: userRows.teacher.id },
+   459→    data: { sectionIds: JSON.stringify(teacherSections) },
+   460→  });
+   461→
+   462→  // ── Parent portal account (linked to فضل‌کریم with two children) ────────
+   463→  const parentGuardian = guardianByPhone[SIBLING_GUARDIAN.phone];
+   464→  const parentUser = await db.user.create({
+   465→    data: {
+   466→      username: "walikhal",
+   467→      passwordHash: hashPassword("Parent1234"),
+   468→      fullName: "فضل//کریم زمردی",
+   469→      phone: SIBLING_GUARDIAN.phone,
+   470→      isActive: true,
+   471→      guardianId: parentGuardian.id,
+   472→    },
+   473→  });
+   474→  await db.userRole.create({
+   475→    data: { userId: parentUser.id, roleKey: "parent", sectionIds: JSON.stringify([]) },
+   476→  });
+   477→
+   478→  // Student portal account for مینا (own-record scope demo).
+   479→  const mina = await db.student.findFirst({
+   480→    where: { studentNumber: "S-1405-0009" },
+   481→  });
+   482→  if (mina) {
+   483→    let p: { firstName?: string } = {};
+   484→    try { p = JSON.parse(mina.personal); } catch { /* noop */ }
+   485→    const selfGuardian = await db.guardian.create({
+   486→      data: {
+   487→        orgId: org.id,
+   488→        fullName: `${p.firstName ?? "شاگرد"} (حساب شاگردی)`,
+   489→        relationship: "خودِ شاگرد",
+   490→        phone: "+93701234599",
+   491→        portalAccess: true,
+   492→      },
+   493→    });
+   494→    await db.studentGuardian.create({
+   495→      data: {
+   496→        studentId: mina.id,
+   497→        guardianId: selfGuardian.id,
+   498→        relationship: "خودِ شاگرد",
+   499→        isPrimary: false,
+   500→        contactRights: true,
+   501→      },
+   502→    });
+   503→    const studentUser = await db.user.create({
+   504→      data: {
+   505→        username: "shagerd",
+   506→        passwordHash: hashPassword("Student1234"),
+   507→        fullName: p.firstName ?? "شاگرد",
+   508→        phone: "+93701234599",
+   509→        isActive: true,
+   510→        guardianId: selfGuardian.id,
+   511→      },
+   512→    });
+   513→    await db.userRole.create({
+   514→      data: { userId: studentUser.id, roleKey: "student", sectionIds: JSON.stringify([]) },
+   515→    });
+   516→  }
+   517→
+   518→  // ── Applications in various states ───────────────────────────────────────
+   519→  let appSeq = 0;
+   520→  for (const a of APPLICATIONS) {
+   521→    appSeq += 1;
+   522→    const applicantNumber = `A-1405-${String(appSeq).padStart(4, "0")}`;
+   523→    await db.application.create({
+   524→      data: {
+   525→        orgId: org.id,
+   526→        academicYearId: year1405.id,
+   527→        applicantNumber,
+   528→        personal: JSON.stringify({
+   529→          firstName: a.firstName,
+   530→          fatherName: a.fatherName,
+   531→          grandfatherName: a.grandfatherName,
+   532→          gender: a.gender,
+   533→          birthDate: a.birthDate,
+   534→          birthPlace: a.birthPlace,
+   535→          phone: a.phone,
+   536→          address: "کابل، افغانستان",
+   537→          previousSchool: "—",
+   538→          previousGrade: a.grade - 1,
+   539→        }),
+   540→        requestedGradeId: grades[a.grade - 1].id,
+   541→        guardians: JSON.stringify([
+   542→          { ...a.guardian, contactRights: true, portalAccess: a.guardian.portalAccess ?? false },
+   543→        ]),
+   544→        documents: JSON.stringify([
+   545→          { type: "tazkira", title: "کاپی تذکره", provided: true },
+   546→          { type: "photo", title: "عکس پرسنلی", provided: a.status !== "draft" },
+   547→          { type: "previous_certificate", title: "سند تعلیمات قبلی", provided: false },
+   548→        ]),
+   549→        status: a.status,
+   550→        decisionNote: a.note ?? null,
+   551→        submittedAt: a.status !== "draft" ? new Date() : null,
+   552→        reviewedAt: ["under_review", "approved", "rejected", "enrolled"].includes(a.status) ? new Date() : null,
+   553→        reviewedById: ["under_review", "approved", "rejected", "enrolled"].includes(a.status) ? userRows.academic.id : null,
+   554→        decidedAt: ["approved", "rejected"].includes(a.status) ? new Date() : null,
+   555→        decidedById: ["approved", "rejected"].includes(a.status) ? userRows.manager.id : null,
+   556→        createdById: userRows.registrar.id,
+   557→      },
+   558→    });
+   559→  }
+   560→
+   561→  // ── Settings + notifications + audit trail examples ──────────────────────
+   562→  await db.setting.create({
+   563→    data: {
+   564→      key: "app",
+   565→      value: JSON.stringify({
+   566→        modules: {
+   567→          fees: true, accounting: true, payroll: false, library: true,
+   568→          textbooks: true, transport: false, inventory: false, hr: true,
+   569→          communications: true, portals: true,
+   570→        },
+   571→      }),
+   572→    },
+   573→  });
+   574→
+   575→  // Document numbering counters must match the records created above, so
+   576→  // runtime generation (nextDocNumber) continues without collisions.
+   577→  await db.counter.createMany({
+   578→    data: [
+   579→      { key: `applicant:${year1405.name}`, value: appSeq },
+   580→      { key: `student:${year1405.name}`, value: studentSeq },
+   581→    ],
+   582→  });
+   583→
+   584→  await db.notification.createMany({
+   585→    data: [
+   586→      {
+   587→        userId: userRows.manager.id,
+   588→        type: "application.submitted",
+   589→        title: "درخواست شمولیت جدید",
+   590→        body: "درخواست A-1405-0002 ارائه شد و منتظر بررسی است.",
+   591→        link: "#/admissions",
+   592→      },
+   593→      {
+   594→        userId: userRows.registrar.id,
+   595→        type: "system",
+   596→        title: "خوش آمدید",
+   597→        body: "داده‌های نمایشی مکتب‌یار با موفقیت ایجاد شد.",
+   598→      },
+   599→    ],
+   600→  });
+   601→
+   602→  await db.auditEvent.createMany({
+   603→    data: [
+   604→      {
+   605→        actorId: userRows.admin.id,
+   606→        actorName: "انجنیر احمد شاه ولی‌زاده",
+   607→        action: "system.seed",
+   608→        entity: "Organization",
+   609→        entityId: org.id,
+   610→        after: JSON.stringify({ demo: true, note: "داده‌های نمایشی مصنوعی" }),
+   611→        ip: "127.0.0.1",
+   612→      },
+   613→    ],
+   614→  });
+   615→
+   616→  // ── Phase 2: staff register ───────────────────────────────────────────
+   617→  // خالد حسینی (existing `teacher` user) becomes a linked StaffMember.
+   618→  const khaled = await db.staffMember.create({
+   619→    data: {
+   620→      orgId: org.id,
+   621→      branchId: mainBranch.id,
+   622→      userId: userRows.teacher.id,
+   623→      fullName: "استاد خالد حسینی",
+   624→      fatherName: "نظرحسین",
+   625→      gender: "male",
+   626→      birthDate: "1990-05-12",
+   627→      phone: "+93700111201",
+   628→      address: "کابل، کارتهٔ نو",
+   629→      position: "teacher",
+   630→      qualification: "لیسانس ریاضی — دانشگاه تعلیم و تربیه کابل",
+   631→      hireDate: "2022-03-01",
+   632→      employmentType: "full_time",
+   633→      status: "active",
+   634→    },
+   635→  });
+   636→  const nargis = await db.staffMember.create({
+   637→    data: {
+   638→      orgId: org.id, branchId: mainBranch.id,
+   639→      fullName: "محترمه نرگس جان آصفی", fatherName: "محب",
+   640→      gender: "female", birthDate: "1993-02-08", phone: "+93700111202",
+   641→      position: "teacher", qualification: "لیسانس ادبیات دری",
+   642→      hireDate: "2023-03-01", employmentType: "full_time", status: "active",
+   643→    },
+   644→  });
+   645→  const akmal = await db.staffMember.create({
+   646→    data: {
+   647→      orgId: org.id, branchId: mainBranch.id,
+   648→      fullName: "محمد اکمل صافی", fatherName: "عبدالرحیم",
+   649→      gender: "male", birthDate: "1988-09-25", phone: "+93700111203",
+   650→      position: "teacher", qualification: "لیسانس زبان انگلیسی",
+   651→      hireDate: "2021-09-01", employmentType: "full_time", status: "active",
+   652→    },
+   653→  });
+   654→  // Admin/support staff linked to their existing portal accounts.
+   655→  const adminStaffRows = [
+   656→    { user: userRows.manager, fullName: "استاد عبدالقادر برات", fatherName: "شاهد", gender: "male", birthDate: "1979-07-04", position: "admin_staff", qualification: "لیسانس مدیریت" },
+   657→    { user: userRows.academic, fullName: "استاد سمیع‌الله نوری", fatherName: "غلام‌حیدر", gender: "male", birthDate: "1982-11-17", position: "admin_staff", qualification: "لیسانس تعلیم و تربیه" },
+   658→    { user: userRows.registrar, fullName: "محترمه نعیمه صمدی", fatherName: "یوسف", gender: "female", birthDate: "1995-01-23", position: "admin_staff", qualification: "دیپلم حسابداری و ثبت" },
+   659→    { user: userRows.finance, fullName: "محترم حبیب‌الله رفیعی", fatherName: "قاسم", gender: "male", birthDate: "1986-03-30", position: "admin_staff", qualification: "لیسانس اقتصاد" },
+   660→    { user: userRows.librarian, fullName: "محترم ظاهر شریفی", fatherName: "داوود", gender: "male", birthDate: "1991-12-09", position: "support", qualification: "دیپلم لیسه" },
+   661→  ];
+   662→  for (const s of adminStaffRows) {
+   663→    await db.staffMember.create({
+   664→      data: {
+   665→        orgId: org.id, branchId: mainBranch.id, userId: s.user.id,
+   666→        fullName: s.fullName, fatherName: s.fatherName, gender: s.gender,
+   667→        birthDate: s.birthDate, phone: `+9370011${Math.floor(Math.random() * 90000 + 10000)}`,
+   668→        position: s.position, qualification: s.qualification,
+   669→        hireDate: "2022-03-01", employmentType: "full_time", status: "active",
+   670→      },
+   671→    });
+   672→  }
+   673→
+   674→  // ── Phase 2: teaching assignments ────────────────────────────────────
+   675→  const subj = {
+   676→    dari: await db.subject.findFirstOrThrow({ where: { code: "DARI" } }),
+   677→    math: await db.subject.findFirstOrThrow({ where: { code: "MATH" } }),
+   678→    sci: await db.subject.findFirstOrThrow({ where: { code: "SCI" } }),
+   679→    eng: await db.subject.findFirstOrThrow({ where: { code: "ENG" } }),
+   680→  };
+   681→  const assignments = [
+   682→    { staff: khaled, subject: subj.math, sections: ["4-0", "4-1", "5-0"] },
+   683→    { staff: khaled, subject: subj.sci, sections: ["4-0", "5-0"] },
+   684→    { staff: nargis, subject: subj.dari, sections: ["3-0", "4-0", "4-1", "5-0"] },
+   685→    { staff: akmal, subject: subj.eng, sections: ["4-0", "4-1", "5-0"] },
+   686→  ];
+   687→  for (const a of assignments) {
+   688→    for (const key of a.sections) {
+   689→      const sec = sections[key];
+   690→      if (!sec) continue;
+   691→      await db.teachingAssignment.create({
+   692→        data: {
+   693→          academicYearId: year1405.id,
+   694→          classSectionId: sec.id,
+   695→          subjectId: a.subject.id,
+   696→          staffId: a.staff.id,
+   697→          createdById: userRows.academic.id,
+   698→        },
+   699→      });
+   700→    }
+   701→  }
+   702→
+   703→  // ── Phase 2: weekly timetable for 4-الف and 5-الف ─────────────────────
+   704→  // Rotation avoids teacher clashes: خالد(ریاضی/علوم), نرگس(دری), اکمل(انگلیسی)
+   705→  const plan40 = [subj.dari, subj.math, subj.sci, subj.eng];
+   706→  const plan50 = [subj.sci, subj.eng, subj.dari, subj.math];
+   707→  const staffOf = (s: { id: string; code: string }) =>
+   708→    s.code === "DARI" ? nargis : s.code === "MATH" || s.code === "SCI" ? khaled : akmal;
+   709→  for (let weekday = 0; weekday <= 4; weekday++) {
+   710→    for (let p = 0; p < 4; p++) {
+   711→      await db.timetableSlot.create({
+   712→        data: {
+   713→          classSectionId: sections["4-0"].id, weekday, period: p + 1,
+   714→          subjectId: plan40[p].id, staffId: staffOf(plan40[p]).id,
+   715→          roomName: `اتاق 4${1}`,
+   716→          createdById: userRows.academic.id,
+   717→        },
+   718→      });
+   719→      await db.timetableSlot.create({
+   720→        data: {
+   721→          classSectionId: sections["5-0"].id, weekday, period: p + 1,
+   722→          subjectId: plan50[p].id, staffId: staffOf(plan50[p]).id,
+   723→          roomName: "اتاق 51",
+   724→          createdById: userRows.academic.id,
+   725→        },
+   726→      });
+   727→    }
+   728→  }
+   729→
+   730→  // ── Phase 2: attendance history (last school week) ────────────────────
+   731→  // Whole-day sessions; submitted ones count in statistics, one open today.
+   732→  const studentsOf = async (key: string) =>
+   733→    db.enrollment.findMany({
+   734→      where: { classSectionId: sections[key].id, status: "active" },
+   735→      include: { student: true },
+   736→      orderBy: { rollNumber: "asc" },
+   737→    });
+   738→
+   739→  const attendanceDays = [
+   740→    { date: "2026-11-01", submit: true },
+   741→    { date: "2026-11-02", submit: true },
+   742→    { date: "2026-11-03", submit: true },
+   743→    { date: "2026-11-04", submit: true },
+   744→    { date: "2026-11-05", submit: true },
+   745→  ];
+   746→  for (const key of ["4-0", "4-1", "5-0"]) {
+   747→    const roster = await studentsOf(key);
+   748→    for (const day of attendanceDays) {
+   749→      const session = await db.attendanceSession.create({
+   750→        data: {
+   751→          classSectionId: sections[key].id,
+   752→          date: day.date,
+   753→          period: 0,
+   754→          status: "submitted",
+   755→          recordedById: khaled.id,
+   756→          submittedById: khaled.id,
+   757→          submittedAt: new Date(),
+   758→        },
+   759→      });
+   760→      let i = 0;
+   761→      for (const e of roster) {
+   762→        // 4th student absent every other day; one excused; one late pattern.
+   763→        let status: "present" | "absent" | "late" | "excused" = "present";
+   764→        if (i === 3 && (day.date === "2026-11-02" || day.date === "2026-11-04")) status = "absent";
+   765→        else if (i === 1 && day.date === "2026-11-03") status = "late";
+   766→        else if (i === 2 && day.date === "2026-11-05") status = "excused";
+   767→        await db.attendanceRecord.create({
+   768→          data: { sessionId: session.id, studentId: e.student.id, status },
+   769→        });
+   770→        i += 1;
+   771→      }
+   772→    }
+   773→    // Today's session still open (demonstrates the record → submit flow).
+   774→    await db.attendanceSession.create({
+   775→      data: {
+   776→        classSectionId: sections[key].id,
+   777→        date: "2026-11-06",
+   778→        period: 0,
+   779→        status: "open",
+   780→        recordedById: khaled.id,
+   781→      },
+   782→    });
+   783→  }
+   784→
+   785→  // ── Phase 2: assessments & grades ─────────────────────────────────────
+   786→  async function addAssessment(opts: {
+   787→    sectionKey: string; subject: { id: string }; staff: { id: string };
+   788→    title: string; type: string; maxScore: number; weight: number;
+   789→    date: string; status: string;
+   790→    scores: Array<{ studentNumber: string; score: number | null; isAbsent?: boolean }>;
+   791→  }) {
+   792→    const sec = sections[opts.sectionKey];
+   793→    const a = await db.assessment.create({
+   794→      data: {
+   795→        orgId: org.id,
+   796→        academicYearId: year1405.id,
+   797→        classSectionId: sec.id,
+   798→        subjectId: opts.subject.id,
+   799→        staffId: opts.staff.id,
+   800→        title: opts.title,
+   801→        type: opts.type,
+   802→        date: opts.date,
+   803→        maxScore: opts.maxScore,
+   804→        weight: opts.weight,
+   805→        status: opts.status,
+   806→        createdById: userRows.academic.id,
+   807→        ...(opts.status === "published" ? {
+   808→          publishedById: userRows.manager.id,
+   809→          publishedAt: new Date(),
+   810→          gradingPolicy: JSON.stringify({ maxScore: opts.maxScore, weight: opts.weight, type: opts.type }),
+   811→        } : {}),
+   812→      },
+   813→    });
+   814→    for (const s of opts.scores) {
+   815→      const st = await db.student.findFirst({ where: { studentNumber: s.studentNumber } });
+   816→      if (!st) continue;
+   817→      await db.grade.create({
+   818→        data: {
+   819→          assessmentId: a.id,
+   820→          studentId: st.id,
+   821→          score: s.score,
+   822→          isAbsent: s.isAbsent ?? false,
+   823→          enteredById: userRows.teacher.id,
+   824→          enteredAt: new Date(),
+   825→        },
+   826→      });
+   827→    }
+   828→    return a;
+   829→  }
+   830→
+   831→  // Published midterm — ریاضی, section 4-0 (all graded).
+   832→  await addAssessment({
+   833→    sectionKey: "4-0", subject: subj.math, staff: khaled,
+   834→    title: "امتحان میان‌ترم ریاضی — نیم‌سال اول", type: "midterm",
+   835→    maxScore: 40, weight: 2, date: "2026-09-10", status: "published",
+   836→    scores: [
+   837→      { studentNumber: "S-1405-0003", score: 36 },
+   838→      { studentNumber: "S-1405-0011", score: 31 },
+   839→      { studentNumber: "S-1405-0012", score: 24 },
+   840→      { studentNumber: "S-1405-0013", score: 28 },
+   841→    ],
+   842→  });
+   843→  // Published quiz — دری, section 4-0 (one student was absent on exam day).
+   844→  await addAssessment({
+   845→    sectionKey: "4-0", subject: subj.dari, staff: nargis,
+   846→    title: "کوئیز درس اول — امالی و انشاء", type: "quiz",
+   847→    maxScore: 10, weight: 1, date: "2026-10-18", status: "published",
+   848→    scores: [
+   849→      { studentNumber: "S-1405-0003", score: 9 },
+   850→      { studentNumber: "S-1405-0011", score: 8 },
+   851→      { studentNumber: "S-1405-0012", score: null, isAbsent: true },
+   852→      { studentNumber: "S-1405-0013", score: 10 },
+   853→    ],
+   854→  });
+   855→  // Grading in progress — ریاضی quiz, section 4-0 (missing ≠ zero demo:
+   856→  // two students not yet graded).
+   857→  await addAssessment({
+   858→    sectionKey: "4-0", subject: subj.math, staff: khaled,
+   859→    title: "کوئیز ضرب و تقسیم", type: "quiz",
+   860→    maxScore: 10, weight: 1, date: "2026-11-02", status: "grading",
+   861→    scores: [
+   862→      { studentNumber: "S-1405-0003", score: 10 },
+   863→      { studentNumber: "S-1405-0011", score: 7 },
+   864→    ],
+   865→  });
+   866→  // Published midterm for 4-1 (parent/مینا demo) and 5-0.
+   867→  await addAssessment({
+   868→    sectionKey: "4-1", subject: subj.math, staff: khaled,
+   869→    title: "امتحان میان‌ترم ریاضی — نیم‌سال اول", type: "midterm",
+   870→    maxScore: 40, weight: 2, date: "2026-09-10", status: "published",
+   871→    scores: [{ studentNumber: "S-1405-0009", score: 33 }],
+   872→  });
+   873→  await addAssessment({
+   874→    sectionKey: "4-1", subject: subj.dari, staff: nargis,
+   875→    title: "کوئیز امالی — حروف و حرکات", type: "quiz",
+   876→    maxScore: 10, weight: 1, date: "2026-10-20", status: "published",
+   877→    scores: [{ studentNumber: "S-1405-0009", score: 9 }],
+   878→  });
+   879→  await addAssessment({
+   880→    sectionKey: "5-0", subject: subj.math, staff: khaled,
+   881→    title: "امتحان میان‌ترم ریاضی — نیم‌سال اول", type: "midterm",
+   882→    maxScore: 40, weight: 2, date: "2026-09-11", status: "published",
+   883→    scores: [
+   884→      { studentNumber: "S-1405-0001", score: 38 },
+   885→      { studentNumber: "S-1405-0014", score: 27 },
+   886→      { studentNumber: "S-1405-0015", score: 33 },
+   887→    ],
+   888→  });
+   889→
+   890→  console.log("✅ Seed complete.");
+   891→  console.log("   Demo logins (all fictional):");
+   892→  console.log("   admin / Admin1234 · manager / Manager1234 · registrar / Registrar1234");
+   893→  console.log("   academic / Academic1234 · teacher / Teacher1234 · finance / Finance1234");
+   894→  console.log("   cashier / Cashier1234 · librarian / Library1234 · hr / Hr12345678");
+   895→  console.log("   auditor / Auditor1234 · walikhal / Parent1234 (ولی با دو فرزند)");
+   896→  console.log("   shagerd / Student1234 (حساب شاگردی)");
+   897→}
+   898→
+   899→main()
+   900→  .catch((e) => {
+   901→    console.error(e);
+   902→    process.exit(1);
+   903→  })
+   904→  .finally(() => db.$disconnect());
+   905→

@@ -17,7 +17,7 @@ export const GET = withApi(
   { permission: "staff.view" },
   async (req: NextRequest, { auth }: { auth: AuthContext }) => {
     const q = parseQuery(req.url, querySchema);
-    if (q.minimal === "teachers") return jsonList(await listTeachersMinimal());
+    if (q.minimal === "teachers") return jsonList(await listTeachersMinimal(auth));
     return jsonList(await listStaff(auth, q));
   },
 );

@@ -13,7 +13,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { errors } from "@/server/shared/http";
 import { writeAudit } from "@/server/shared/audit";
-import { can, canAccessSection, staffForUser, canViewStudent } from "@/server/rbac/scope";
+import { can, canAccessSection, staffForUser, canViewStudent, sectionListWhere } from "@/server/rbac/scope";
 import { dateInput } from "@/server/academic";
 import type { AuthContext } from "@/server/auth/context";
 
@@ -123,11 +123,19 @@ export async function listSessions(
   if (filters.classSectionId) {
     await requireSectionAccess(ctx, filters.classSectionId, "attendance.view");
   }
+  // Branch isolation: sessions only for sections the viewer may see.
+  const scopeWhere = await sectionListWhere(ctx, "attendance.view");
+  if (scopeWhere === null) return [];
   const rows = await db.attendanceSession.findMany({
     where: {
-      classSectionId: filters.classSectionId,
-      date: { gte: filters.from, lte: filters.to },
-      status: filters.status,
+      AND: [
+        { classSection: scopeWhere },
+        ...(filters.classSectionId ? [{ classSectionId: filters.classSectionId }] : []),
+        ...(filters.status ? [{ status: filters.status }] : []),
+        ...(filters.from || filters.to
+          ? [{ date: { gte: filters.from, lte: filters.to } }]
+          : []),
+      ],
     },
     include: SESSION_INCLUDE,
     orderBy: [{ date: "desc" }, { period: "asc" }],

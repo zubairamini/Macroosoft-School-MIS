@@ -7,7 +7,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { errors } from "@/server/shared/http";
 import { writeAudit } from "@/server/shared/audit";
-import { canAccessSection } from "@/server/rbac/scope";
+import { canAccessSection, canAccessBranch, sectionListWhere } from "@/server/rbac/scope";
 import { dateInput } from "@/server/academic";
 import type { AuthContext } from "@/server/auth/context";
 
@@ -42,10 +42,18 @@ export const timetableSlotDto = z.object({
 // ── Teaching assignments ────────────────────────────────────────────────────
 
 export async function listAssignments(ctx: AuthContext, filters: { academicYearId?: string; classSectionId?: string }) {
+  // Branch isolation: assignments shown only for sections in branches the
+  // viewer may see (section-scoped teachers see their own; branch-bound
+  // roles their branch; cross-branch roles the active context or all).
+  const scopeWhere = await sectionListWhere(ctx, "academic.view");
+  if (scopeWhere === null) return [];
   return db.teachingAssignment.findMany({
     where: {
-      academicYearId: filters.academicYearId,
-      classSectionId: filters.classSectionId,
+      AND: [
+        { classSection: scopeWhere },
+        ...(filters.academicYearId ? [{ academicYearId: filters.academicYearId }] : []),
+        ...(filters.classSectionId ? [{ classSectionId: filters.classSectionId }] : []),
+      ],
     },
     include: {
       staff: { select: { id: true, fullName: true, status: true } },
@@ -73,6 +81,14 @@ export async function setAssignment(ctx: AuthContext, dto: z.infer<typeof assign
   if (!section) throw errors.notFound("شعبهٔ صنف");
   if (!subject) throw errors.notFound("مضمون");
   if (!staff) throw errors.notFound("استاد");
+  // Branch isolation: the section and the teacher must be in a branch the
+  // viewer may manage (cross-branch roles may combine branches).
+  if (!canAccessBranch(ctx, "timetable.manage", section.branchId)) {
+    throw errors.forbidden("شعبهٔ صنف به شعبهٔ دیگری تعلق دارد.");
+  }
+  if (staff.branchId && !canAccessBranch(ctx, "timetable.manage", staff.branchId)) {
+    throw errors.forbidden("این استاد به شعبهٔ دیگری تعلق دارد.");
+  }
   if (staff.status !== "active") {
     throw errors.badRequest("فقط استادان فعال می‌توانند مضمون تدریس کنند.");
   }
@@ -142,6 +158,11 @@ export async function removeAssignment(ctx: AuthContext, id: string) {
 export async function getTimetable(ctx: AuthContext, filters: { classSectionId?: string; staffId?: string }) {
   if (!filters.classSectionId && !filters.staffId) {
     throw errors.badRequest("شعبهٔ صنف یا استاد را مشخص کنید.");
+  }
+  // Branch isolation: section timetables only for accessible sections.
+  if (filters.classSectionId) {
+    const allowed = await canAccessSection(ctx, "timetable.view", filters.classSectionId);
+    if (!allowed) throw errors.forbidden("شعبهٔ صنف به شعبهٔ دیگری تعلق دارد.");
   }
   const rows = await db.timetableSlot.findMany({
     where: {

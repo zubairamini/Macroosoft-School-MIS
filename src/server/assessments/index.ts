@@ -15,7 +15,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { errors } from "@/server/shared/http";
 import { writeAudit } from "@/server/shared/audit";
-import { can, canAccessSection, teachesSubject, canViewStudent } from "@/server/rbac/scope";
+import { can, canAccessSection, teachesSubject, canViewStudent, sectionListWhere } from "@/server/rbac/scope";
 import { dateInput } from "@/server/academic";
 import type { AuthContext } from "@/server/auth/context";
 
@@ -144,12 +144,18 @@ export async function listAssessments(
     const ok = await canAccessSection(ctx, "assessments.view", filters.classSectionId);
     if (!ok) throw errors.forbidden("شما اجازهٔ مشاهدهٔ امتحانات این شعبهٔ صنف را ندارید.");
   }
+  // Branch isolation: assessments only for sections the viewer may see.
+  const scopeWhere = await sectionListWhere(ctx, "assessments.view");
+  if (scopeWhere === null) return [];
   const rows = await db.assessment.findMany({
     where: {
-      academicYearId: filters.academicYearId,
-      classSectionId: filters.classSectionId,
-      subjectId: filters.subjectId,
-      status: filters.status,
+      AND: [
+        { classSection: scopeWhere },
+        ...(filters.academicYearId ? [{ academicYearId: filters.academicYearId }] : []),
+        ...(filters.classSectionId ? [{ classSectionId: filters.classSectionId }] : []),
+        ...(filters.subjectId ? [{ subjectId: filters.subjectId }] : []),
+        ...(filters.status ? [{ status: filters.status }] : []),
+      ],
     },
     include: ASSESSMENT_INCLUDE,
     orderBy: [{ createdAt: "desc" }],

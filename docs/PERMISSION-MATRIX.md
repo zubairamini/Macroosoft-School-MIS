@@ -1,5 +1,9 @@
 # Permission Matrix — ماتریس اجازه‌ها
 
+> ⚠️ This table is GENERATED from `src/server/rbac/permissions.ts` by
+> `scripts/gen-permission-matrix.py` — regenerate it after changing the
+> matrix; do not hand-edit.
+
 Single source of truth: `src/server/rbac/permissions.ts`
 (`PERMISSIONS`, `ROLE_MATRIX`, `ROLE_LABELS_DARI`). Also served inside the
 OpenAPI document (`/api/v1/openapi` → `components.x-role-matrix`) and
@@ -11,101 +15,94 @@ rendered in the UI at `#/settings/roles`.
    permission server-side; the same check applies to search results,
    exports, and background jobs.
 2. **Configuration ≠ approval ≠ restricted data.** `settings.manage`
-   (admin) is deliberately separate from `applications.review` (manager) and
-   from `students.view_sensitive` (registrar/manager).
-3. **Scopes narrow grants per user.** A role grants (permission, scope-kind);
+   (admin) is deliberately separate from `applications.review`
+   (manager/مدیر عام) and from `students.view_sensitive`.
+3. **Scopes narrow grants per user.** A role grants (permission, scope);
    the user's role-assignment row supplies parameters (branchId,
    academicYearId, sectionIds, guardian link, own-record link).
-4. Multi-role accounts take the union of grants.
+4. **Branch isolation (Phase 3):** a `branch`-scoped grant WITHOUT a
+   concrete `UserRole.branchId` grants NOTHING (fail closed). Only
+   `admin` and `general_manager` hold `all`-scoped data grants.
+5. Multi-role accounts take the union of grants.
 
 ## Scope kinds
 
 | Scope | Meaning | Parameters |
 |---|---|---|
-| `all` | whole organization | — |
-| `branch` | one school branch/campus | `UserRole.branchId` (null = all branches) |
+| `all` | whole organization (only admin / مدیر عام for data) | — |
+| `branch` | one school branch — **requires** `UserRole.branchId` | `UserRole.branchId` |
 | `year` | one academic year | `UserRole.academicYearId` |
 | `section` | assigned class sections | `UserRole.sectionIds` (JSON array) |
 | `own` | the signed-in student's own record | `User.guardianId` self-link |
 | `guardian` | explicitly linked children | `StudentGuardian` rows with `contactRights` |
 
-## Matrix (default roles)
+## Matrix (default roles) — 13 roles × 46 permissions
 
-Legend: `A`=all · `B`=branch · `S`=section · `G`=guardian · `O`=own · ✓=granted with scope in cell.
+Legend: `A`=all · `B`=branch (needs branchId) · `S`=section · `G`=guardian · `O`=own · `Y`=year · — = not granted.
 
-| Permission | admin | manager | academic_mgr | registrar | finance | cashier | teacher | librarian | hr | student | parent | auditor |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dashboard.view | A | A | A | A | A | A | A | A | A | A | A | A |
-| students.view | A | B | B | B | A | A | **S** | A | — | **O** | **G** | A |
-| students.view_sensitive | A | B | — | B | — | — | — | — | — | — | — | — |
-| students.create | A | — | — | B | — | — | — | — | — | — | — | — |
-| students.update | A | — | B | B | — | — | — | — | — | — | — | — |
-| students.export | A | B | B | B | — | — | — | — | — | — | — | — |
-| applications.view | A | B | B | B | — | — | — | — | — | — | — | A |
-| applications.create | A | — | — | B | — | — | — | — | — | — | — | — |
-| applications.update | A | — | — | B | — | — | — | — | — | — | — | — |
-| applications.submit | A | — | — | B | — | — | — | — | — | — | — | — |
-| **applications.review** | — **deliberately** | **B** | — | — | — | — | — | — | — | — | — | — |
-| applications.enroll | A | B | B | B | — | — | — | — | — | — | — | — |
-| guardians.view | A | B | B | B | A | — | — | — | — | — | — | A |
-| guardians.manage | A | — | — | B | — | — | — | — | — | — | — | — |
-| academic.view | A | B | B | B | — | — | B | — | — | — | — | A |
-| academic.manage | A | B | B | — | — | — | — | — | — | — | — | — |
-| **staff.view** *(P2)* | A | B | B | — | — | — | — | — | A | — | — | A |
-| **staff.manage** *(P2)* | A | — | — | — | — | — | — | — | A | — | — | — |
-| **timetable.view** *(P2)* | A | B | B | — | — | — | **S** | — | — | — | — | A |
-| **timetable.manage** *(P2)* | A | B | B | — | — | — | — | — | — | — | — | — |
-| **attendance.view** *(P2)* | A | B | B | B | — | — | **S** | — | — | **O** | **G** | A |
-| **attendance.record** *(P2)* | — | — | — | — | — | — | **S** | — | — | — | — | — |
-| **attendance.correct** *(P2)* | — | **B** | **B** | — | — | — | — | — | — | — | — | — |
-| **assessments.view** *(P2)* | A | B | B | — | — | — | **S** | — | — | — | — | A |
-| **assessments.manage** *(P2)* | — | **B** | **B** | — | — | — | — | — | — | — | — | — |
-| **grades.enter** *(P2)* | — | — | B | — | — | — | **S** | — | — | — | — | — |
-| **grades.view** *(P2)* | A | B | B | B | — | — | **S** | — | — | **O** | **G** | A |
-| settings.view | A | A | A | A | A | — | — | — | A | — | — | A |
-| settings.manage | **A only** | — | — | — | — | — | — | — | — | — | — | — |
-| users.view | A | A | — | — | — | — | — | — | **A** | — | — | A |
-| users.manage | A | — | — | — | — | — | — | — | **A** | — | — | — |
-| roles.view | A | A | A | A | — | — | A | — | — | — | — | A |
-| audit.view | A | A | — | — | — | — | — | — | — | — | — | A |
-| notifications.view | O | O | O | O | O | O | O | O | O | O | O | O |
-| search.use | A | B | B | B | A | A | S | A | A | — | — | A |
+| Permission | admin | general_manager | manager | academic_manager | registrar | finance_officer | cashier | teacher | librarian | hr_officer | student | parent | auditor |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dashboard.view | A | A | A | A | A | A | A | A | A | A | A | A | A |
+| students.view | A | A | B | B | B | B | B | S | B | — | O | G | B |
+| students.view_sensitive | A | A | B | — | B | — | — | — | — | — | — | — | — |
+| students.create | A | — | — | — | B | — | — | — | — | — | — | — | — |
+| students.update | A | A | — | B | B | — | — | — | — | — | — | — | — |
+| students.export | A | A | B | B | B | — | — | — | — | — | — | — | — |
+| applications.view | A | A | B | B | B | — | — | — | — | — | — | — | B |
+| applications.create | A | — | — | — | B | — | — | — | — | — | — | — | — |
+| applications.update | A | — | — | — | B | — | — | — | — | — | — | — | — |
+| applications.submit | A | — | — | — | B | — | — | — | — | — | — | — | — |
+| applications.review | — | A | B | — | — | — | — | — | — | — | — | — | — |
+| applications.enroll | A | A | B | B | B | — | — | — | — | — | — | — | — |
+| guardians.view | A | A | B | B | B | B | — | — | — | — | — | — | B |
+| guardians.manage | A | — | — | — | B | — | — | — | — | — | — | — | — |
+| academic.view | A | A | B | B | B | — | — | B | — | — | — | — | B |
+| academic.manage | A | A | B | B | — | — | — | — | — | — | — | — | — |
+| staff.view | A | A | B | B | — | — | — | — | — | B | — | — | B |
+| staff.manage | A | — | — | — | — | — | — | — | — | B | — | — | — |
+| timetable.view | A | A | B | B | — | — | — | S | — | — | — | — | B |
+| timetable.manage | A | — | B | B | — | — | — | — | — | — | — | — | — |
+| attendance.view | A | A | B | B | B | — | — | S | — | — | O | G | B |
+| attendance.record | — | — | — | — | — | — | — | S | — | — | — | — | — |
+| attendance.correct | — | A | B | B | — | — | — | — | — | — | — | — | — |
+| assessments.view | A | A | B | B | — | — | — | S | — | — | — | — | B |
+| assessments.manage | — | A | B | B | — | — | — | — | — | — | — | — | — |
+| grades.enter | — | — | — | B | — | — | — | S | — | — | — | — | — |
+| grades.view | A | A | B | B | B | — | — | S | — | — | O | G | B |
+| fees.view | A | A | — | — | — | B | — | — | — | — | — | — | B |
+| fees.manage | A | A | — | — | — | B | — | — | — | — | — | — | — |
+| invoices.view | A | A | B | — | — | B | B | — | — | — | — | G | B |
+| invoices.manage | A | A | — | — | — | B | — | — | — | — | — | — | — |
+| payments.view | A | A | B | — | — | B | B | — | — | — | — | — | B |
+| payments.collect | — | — | — | — | — | B | B | — | — | — | — | — | — |
+| payments.void | A | A | — | — | — | B | — | — | — | — | — | — | — |
+| expenses.view | A | A | B | — | — | B | — | — | — | — | — | — | B |
+| expenses.manage | A | A | — | — | — | B | — | — | — | — | — | — | — |
+| payroll.view | A | A | B | — | — | B | — | — | — | B | — | — | B |
+| payroll.manage | A | A | — | — | — | B | — | — | — | — | — | — | — |
+| settings.view | A | A | A | A | A | A | — | — | — | A | — | — | A |
+| settings.manage | A | — | — | — | — | — | — | — | — | — | — | — | — |
+| users.view | A | A | B | — | — | — | — | — | — | B | — | — | B |
+| users.manage | A | — | — | — | — | — | — | — | — | B | — | — | — |
+| roles.view | A | A | A | A | A | — | — | A | — | — | — | — | A |
+| audit.view | A | A | A | — | — | — | — | — | — | — | — | — | A |
+| notifications.view | O | O | O | O | O | O | O | O | O | O | O | O | O |
+| search.use | A | A | B | B | B | B | B | S | B | B | — | — | B |
 
-## Sensitive-field & data rules (enforced in code)
+## Role labels (Dari)
 
-- `healthNotes` / identity fields are stripped server-side from every
-  student response unless the caller holds `students.view_sensitive`
-  (`stripSensitive` in `src/server/students/index.ts`).
-- Parent accounts resolve students ONLY through `StudentGuardian` links with
-  `contactRights = true` — guessed IDs return 403 (E2E-tested).
-- Teacher accounts resolve students ONLY through current enrollments in
-  `UserRole.sectionIds` (E2E-tested).
-- The last remaining admin cannot demote/deactivate themselves
-  (`users.update` guard).
-- Password change revokes all other sessions and issues a fresh one.
-
-## Phase-2 academic-record rules (enforced in code)
-
-- **Grade entry is separated from publishing.** Teachers (`grades.enter`,
-  section scope) enter scores; only `assessments.manage` holders (manager /
-  academic_manager — NOT admin, NOT teacher) publish and lock results.
-- **Teaching contract.** Grade entry is allowed for the assigned teacher via
-  `TeachingAssignment` rows (section+subject+year) even without a section
-  grant — and for branch-scoped academic managers as substitutes.
-- **Published grades are immutable** (`enterGrades` rejects with 400).
-  Corrections arrive in a later phase as approved reversals; the grading
-  policy at publish time is snapshotted on the assessment.
-- **Attendance submit/correct separation.** `attendance.record` (teacher,
-  own sections) opens and submits sessions; only `attendance.correct`
-  (manager/academic_manager) can reopen a submitted session, with a
-  mandatory reason that lands in the audit trail.
-- **Parents/students see grades and attendance only after publishing**
-  (`grades.view` guardian/own scopes; unpublished assessments 403).
-- Finance/cashier/librarian hold NO academic-record permissions at all
-  (E2E-tested).
-
-## Custom roles
-
-The matrix ships 12 system roles. Custom roles are supported by the data
-model (`UserRole.roleKey` is a free string; a custom-role table with
-permission JSON extends `grantsForRole` in Phase 2) — not yet exposed in UI.
+| Role key | Dari label |
+|---|---|
+| `admin` | مدیر سیستم |
+| `general_manager` | مدیر عام (همه شعبه‌ها) |
+| `manager` | مدیر مکتب |
+| `academic_manager` | مدیر تعلیمی |
+| `registrar` | مسجل |
+| `finance_officer` | مسئول مالی |
+| `cashier` | صندوقدار |
+| `teacher` | استاد |
+| `librarian` | کتاب‌دار |
+| `hr_officer` | مسئول منابع بشری |
+| `student` | شاگرد |
+| `parent` | ولی |
+| `auditor` | بازرس |

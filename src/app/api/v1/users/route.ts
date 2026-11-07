@@ -5,9 +5,12 @@ import { parseBody } from "@/server/shared/validation";
 import { listUsers, createUser, userCreateDto } from "@/server/users";
 import type { AuthContext } from "@/server/auth/context";
 
-export const GET = withApi({ permission: "users.view" }, async () => {
-  return jsonOk(await listUsers());
-});
+export const GET = withApi(
+  { permission: "users.view" },
+  async (_req: NextRequest, { auth }: { auth: AuthContext }) => {
+    return jsonOk(await listUsers(auth));
+  },
+);
 
 export const POST = withApi(
   { permission: "users.manage" },

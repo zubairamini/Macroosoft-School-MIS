@@ -1,5 +1,11 @@
 // Scope engine: resolves grants and enforces permission checks against
 // concrete resources. Used by HTTP controllers, search, exports, and jobs.
+//
+// BRANCH ISOLATION (Phase 3, fail-closed):
+//   A branch-scoped grant WITHOUT a concrete UserRole.branchId grants
+//   NOTHING. Before Phase 3 it meant "all branches"; under the strict
+//   isolation policy only scope "all" (admin / general_manager) crosses
+//   branch boundaries. Every list helper below enforces this.
 
 import { db } from "@/lib/db";
 import type { AuthContext } from "@/server/auth/context";
@@ -25,6 +31,59 @@ export function can(ctx: AuthContext | null, permission: string): boolean {
 /** Grants usable without a concrete resource (e.g. settings screens). */
 export function canAny(ctx: AuthContext | null, permission: string): boolean {
   return can(ctx, permission);
+}
+
+// ── Branch scope helpers ────────────────────────────────────────────────────
+
+/** Concrete branch ids that narrow the viewer's branch-scoped grants for
+ *  `permission`. `null` = not branch-narrowed (all-scope grant or no grant);
+ *  an empty array = branch-scoped grants whose UserRole rows carry no
+ *  branchId → NOTHING is visible (fail closed). */
+export function branchIdsFor(ctx: AuthContext, permission: string): string[] | null {
+  const grants = ctx.grants.filter((g) => g.permission === permission);
+  if (grants.length === 0) return null;
+  if (grants.some((g) => g.scope === "all")) return null;
+  return [
+    ...new Set(
+      grants
+        .filter((g) => g.scope === "branch" && g.branchId)
+        .map((g) => g.branchId as string),
+    ),
+  ];
+}
+
+/** Whether the viewer may act on data of `branchId` under `permission`.
+ *  All-scope grants (admin / مدیر عام) pass for any branch. */
+export function canAccessBranch(
+  ctx: AuthContext,
+  permission: string,
+  branchId: string,
+): boolean {
+  const grants = ctx.grants.filter((g) => g.permission === permission);
+  if (grants.length === 0) return false;
+  if (grants.some((g) => g.scope === "all")) return true;
+  return grants.some((g) => g.scope === "branch" && g.branchId === branchId);
+}
+
+/** Branch narrowing for models with a DIRECT branchId column (FeeStructure,
+ *  Invoice, Payment, Expense, PayrollRun, StaffMember, …).
+ *  Returns `null` when the viewer has no grant at all (caller: deny/empty),
+ *  `{ branchIds: null }` for unrestricted (all-scope, no active context),
+ *  or a concrete branch id list otherwise — which may be ["__none__"] when
+ *  branch-scoped grants carry no branch parameter (fail closed). */
+export function directBranchFilter(
+  ctx: AuthContext,
+  permission: string,
+): { branchIds: string[] | null } | null {
+  const grants = ctx.grants.filter((g) => g.permission === permission);
+  if (grants.length === 0) return null;
+  if (grants.some((g) => g.scope === "all")) {
+    // Cross-branch authority narrowed to the active branch context.
+    return { branchIds: ctx.branchId ? [ctx.branchId] : null };
+  }
+  const ids = branchIdsFor(ctx, permission) ?? [];
+  if (ids.length === 0) return { branchIds: ["__none__"] };
+  return { branchIds: ids };
 }
 
 export async function canViewStudent(
@@ -67,9 +126,9 @@ export async function canViewStudent(
     }
   }
 
-  // Branch scope: any enrollment in an allowed branch.
-  const branchGrants = grants.filter((g) => g.scope === "branch");
-  const withBranchParam = branchGrants.filter((g) => g.branchId);
+  // Branch scope: any enrollment in an explicitly bound branch. A branch
+  // grant WITHOUT a branchId grants nothing (strict isolation).
+  const withBranchParam = grants.filter((g) => g.scope === "branch" && g.branchId);
   if (withBranchParam.length > 0) {
     const allowedBranches = withBranchParam.map((g) => g.branchId) as string[];
     const enr = await db.enrollment.findFirst({
@@ -78,12 +137,8 @@ export async function canViewStudent(
     });
     if (enr) return { allowed: true, grant: withBranchParam[0] };
   }
-  if (branchGrants.some((g) => !g.branchId)) {
-    // branch-scoped grant without narrowing parameter = all branches
-    return { allowed: true, grant: branchGrants.find((g) => !g.branchId) };
-  }
 
-  // Organization-wide scope.
+  // Organization-wide scope (admin / general_manager).
   if (grants.some((g) => g.scope === "all")) {
     return { allowed: true, grant: grants.find((g) => g.scope === "all") };
   }
@@ -115,28 +170,28 @@ export async function studentListWhere(
     or.push({ enrollments: { some: { classSectionId: { in: sectionIds } } } });
   }
 
+  // Branch scope — ONLY grants with a concrete branchId contribute.
   const branchGrants = grants.filter((g) => g.scope === "branch");
   const allowedBranches = branchGrants
     .map((g) => g.branchId)
     .filter((b): b is string => Boolean(b));
-  if (branchGrants.length > 0) {
-    if (allowedBranches.length > 0) {
-      // Narrowed to specific branches on the user's role assignment.
-      or.push({
-        enrollments: { some: { classSection: { branchId: { in: allowedBranches } } } },
-      });
-    } else {
-      // Branch-scoped grant WITHOUT narrowing parameter = all branches.
-      // (Consistent with canViewStudent; the shell's branch context is a
-      // display preference, not an authorization boundary.)
-      return {};
-    }
+  if (allowedBranches.length > 0) {
+    or.push({
+      enrollments: { some: { classSection: { branchId: { in: allowedBranches } } } },
+    });
   }
 
-  if (grants.some((g) => g.scope === "all")) return {};
+  // Organization-wide scope (admin / مدیر عام), narrowed by the active
+  // branch context when one is selected in the shell.
+  if (grants.some((g) => g.scope === "all")) {
+    return ctx.branchId
+      ? { enrollments: { some: { classSection: { branchId: ctx.branchId } } } }
+      : {};
+  }
 
   if (or.length === 0) {
-    // Has grants but none usable without parameters → nothing visible.
+    // Has grants but none usable without parameters (e.g. branch grant
+    // without a UserRole.branchId) → strict isolation: nothing visible.
     return { id: "__none__" };
   }
   return { OR: or };
@@ -164,14 +219,6 @@ export function sectionIdsFor(ctx: AuthContext, permission: string): string[] | 
   return [...new Set(ids)];
 }
 
-/** Branch ids that narrow the viewer's branch-scoped grants; null param on a
- *  grant = all branches (returns `true` for any section). */
-function branchAllowsAny(ctx: AuthContext, permission: string): boolean {
-  return ctx.grants.some(
-    (g) => g.permission === permission && g.scope === "branch" && !g.branchId,
-  );
-}
-
 export async function canAccessSection(
   ctx: AuthContext,
   permission: string,
@@ -185,7 +232,7 @@ export async function canAccessSection(
   const sectionIds = sectionIdsFor(ctx, permission);
   if (sectionIds && sectionIds.includes(sectionId)) return true;
 
-  if (branchAllowsAny(ctx, permission)) return true;
+  // Branch scope — ONLY concrete branchIds count (fail closed otherwise).
   const branchIds = grants
     .filter((g) => g.scope === "branch" && g.branchId)
     .map((g) => g.branchId as string);
@@ -207,14 +254,16 @@ export async function sectionListWhere(
 ): Promise<Record<string, unknown> | null> {
   const grants = ctx.grants.filter((g) => g.permission === permission);
   if (grants.length === 0) return null;
-  if (grants.some((g) => g.scope === "all")) return {};
+  if (grants.some((g) => g.scope === "all")) {
+    // Cross-branch: narrowed by the active branch context when selected.
+    return ctx.branchId ? { branchId: ctx.branchId } : {};
+  }
 
   const or: Record<string, unknown>[] = [];
   const sectionIds = sectionIdsFor(ctx, permission);
   if (sectionIds && sectionIds.length > 0) or.push({ id: { in: sectionIds } });
 
-  if (branchAllowsAny(ctx, permission)) return {};
-
+  // Branch scope — ONLY concrete branchIds count (fail closed otherwise).
   const branchIds = grants
     .filter((g) => g.scope === "branch" && g.branchId)
     .map((g) => g.branchId as string);

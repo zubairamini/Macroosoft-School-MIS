@@ -9,6 +9,7 @@ import { hashPassword, passwordPolicyError } from "@/server/auth/password";
 import { revokeAllUserSessions } from "@/server/auth/session";
 import { isValidRoleKey } from "@/server/rbac/permissions";
 import { normalizePhone } from "@/server/shared/normalization";
+import { canAccessBranch } from "@/server/rbac/scope";
 import type { AuthContext } from "@/server/auth/context";
 
 export const userCreateDto = z.object({
@@ -37,8 +38,39 @@ export const userUpdateDto = z.object({
   sectionIds: z.array(z.string()).default([]),
 });
 
-export async function listUsers() {
+export async function listUsers(ctx: AuthContext) {
+  // Branch isolation: branch-bound viewers (manager / hr_officer / auditor)
+  // see only users bound to their own branches (via role assignment or
+  // staff record). Cross-branch viewers see the active context or everyone.
+  const grants = ctx.grants.filter((g) => g.permission === "users.view");
+  let where: Record<string, unknown>;
+  if (grants.length === 0) {
+    where = { id: "__none__" }; // fail closed (no usable grant)
+  } else if (grants.some((g) => g.scope === "all")) {
+    // Cross-branch (admin / مدیر عام): narrow to the active branch context.
+    where = ctx.branchId
+      ? {
+          OR: [
+            { userRoles: { some: { branchId: ctx.branchId } } },
+            { staffMember: { branchId: ctx.branchId } },
+          ],
+        }
+      : {};
+  } else {
+    const grantBranches = grants
+      .filter((g) => g.scope === "branch" && g.branchId)
+      .map((g) => g.branchId as string);
+    where = grantBranches.length === 0
+      ? { id: "__none__" } // branch grant without a branch → nothing
+      : {
+          OR: [
+            { userRoles: { some: { branchId: { in: grantBranches } } } },
+            { staffMember: { branchId: { in: grantBranches } } },
+          ],
+        };
+  }
   const rows = await db.user.findMany({
+    where,
     orderBy: { createdAt: "asc" },
     include: {
       userRoles: {
@@ -74,6 +106,10 @@ export async function createUser(ctx: AuthContext, dto: z.infer<typeof userCreat
   if (policyError) throw new ApiError(400, "VALIDATION_ERROR", policyError);
   const dup = await db.user.findUnique({ where: { username: dto.username } });
   if (dup) throw errors.conflict("نام کاربری از قبل موجود است.");
+  // Branch isolation: branch-bound admins may only assign their own branch.
+  if (dto.branchId && !canAccessBranch(ctx, "users.manage", dto.branchId)) {
+    throw errors.forbidden("شما فقط می‌توانید کاربر را به شعبهٔ خود تخصیص دهید.");
+  }
 
   const sectionIds = JSON.stringify(dto.sectionIds ?? []);
   return db.$transaction(async (tx) => {
@@ -178,6 +214,10 @@ export async function updateUser(ctx: AuthContext, userId: string, dto: z.infer<
   // assign-role: replaces the user's role assignments
   if (dto.action === "assign-role") {
     if (!dto.roleKey) throw new ApiError(400, "VALIDATION_ERROR", "نقش را انتخاب کنید.");
+    // Branch isolation on role re-assignment.
+    if (dto.branchId && !canAccessBranch(ctx, "users.manage", dto.branchId)) {
+      throw errors.forbidden("شما فقط می‌توانید نقش را به شعبهٔ خود تخصیص دهید.");
+    }
     if (user.id === ctx.user.id && dto.roleKey !== "admin") {
       // Guard: don't let the last admin demote themselves accidentally.
       const admins = await db.userRole.count({ where: { roleKey: "admin" } });

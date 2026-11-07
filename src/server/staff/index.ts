@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { errors } from "@/server/shared/http";
 import { writeAudit } from "@/server/shared/audit";
 import { normalizePhone } from "@/server/shared/normalization";
-import { can } from "@/server/rbac/scope";
+import { can, canAccessBranch, directBranchFilter } from "@/server/rbac/scope";
 import { dateInput } from "@/server/academic";
 import type { AuthContext } from "@/server/auth/context";
 
@@ -83,9 +83,14 @@ function publicStaff(row: {
 }
 
 export async function listStaff(ctx: AuthContext, filters: { q?: string; position?: string; status?: string }) {
+  // Branch isolation: branch-bound roles see only their own branch's staff;
+  // cross-branch roles see the active branch context (or everything).
+  const branchScope = directBranchFilter(ctx, "staff.view");
+  if (!branchScope) return [];
   const rows = await db.staffMember.findMany({
     where: {
       AND: [
+        branchScope.branchIds ? { branchId: { in: branchScope.branchIds } } : {},
         filters.status ? { status: filters.status } : {},
         filters.position ? { position: filters.position } : {},
         filters.q
@@ -121,6 +126,10 @@ export async function getStaff(ctx: AuthContext, id: string) {
     },
   });
   if (!row) throw errors.notFound("کارمند");
+  // Branch isolation on the single-record path.
+  if (row.branchId && !canAccessBranch(ctx, "staff.view", row.branchId)) {
+    throw errors.forbidden("این کارمند به شعبهٔ دیگری تعلق دارد.");
+  }
   const assignments = row.teachingAssignments.map((a) => ({
     id: a.id,
     academicYearId: a.academicYearId,
@@ -142,6 +151,13 @@ export async function createStaff(ctx: AuthContext, dto: z.infer<typeof staffCre
   if (dto.branchId) {
     const branch = await db.branch.findFirst({ where: { id: dto.branchId, orgId: org.id } });
     if (!branch) throw errors.notFound("شعبهٔ مکتب");
+    // Branch-bound creators may only register staff in their own branch.
+    if (!canAccessBranch(ctx, "staff.manage", dto.branchId)) {
+      throw errors.forbidden("شما فقط در شعبهٔ خود می‌توانید کارمند ثبت کنید.");
+    }
+  } else if (!ctx.isCrossBranch) {
+    // Branch-bound creators default to their active branch context.
+    dto = { ...dto, branchId: ctx.branchId };
   }
   return db.$transaction(async (tx) => {
     const row = await tx.staffMember.create({
@@ -184,6 +200,13 @@ export async function updateStaff(
 ) {
   const staff = await db.staffMember.findUnique({ where: { id } });
   if (!staff) throw errors.notFound("کارمند");
+  // Branch isolation: only same-branch (or cross-branch) roles may edit.
+  if (staff.branchId && !canAccessBranch(ctx, "staff.manage", staff.branchId)) {
+    throw errors.forbidden("این کارمند به شعبهٔ دیگری تعلق دارد.");
+  }
+  if (dto.branchId && !canAccessBranch(ctx, "staff.manage", dto.branchId)) {
+    throw errors.forbidden("انتقال کارمند به این شعبه مجاز نیست.");
+  }
   if (staff.version !== dto.version) {
     throw errors.conflict(
       "این معلومات توسط شخص دیگری تغییر کرده است. صفحه را دوباره بارگذاری کنید.",
@@ -242,9 +265,15 @@ export async function updateStaff(
   });
 }
 
-export async function listTeachersMinimal() {
+export async function listTeachersMinimal(ctx: AuthContext) {
+  const branchScope = directBranchFilter(ctx, "staff.view");
+  if (!branchScope) return [];
   return db.staffMember.findMany({
-    where: { status: "active", position: "teacher" },
+    where: {
+      status: "active",
+      position: "teacher",
+      ...(branchScope.branchIds ? { branchId: { in: branchScope.branchIds } } : {}),
+    },
     select: { id: true, fullName: true },
     orderBy: { fullName: "asc" },
   });

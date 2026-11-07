@@ -3,10 +3,14 @@
 نظام مدیریت معلومات مکتب برای افغانستان — به زبان دری، کاملاً راست‌چین، با تقویم
 شمسی افغانی، ارقام فارسی و اجازه‌های دقیق نقش‌محور.
 
-> **وضعیت:** مرحلهٔ اول و دوم (Phases 1–2) از پنج مرحلهٔ توسعه تکمیل و آزمایش
-> شده است — مرحلهٔ اول: ورود امن ← تنظیم مکتب ← شمولیت ← پروفایل شاگرد؛
+> **وضعیت:** مرحلهٔ اول، دوم و سوم (Phases 1–3) از پنج مرحلهٔ توسعه تکمیل و
+> آزمایش شده است — مرحلهٔ اول: ورود امن ← تنظیم مکتب ← شمولیت ← پروفایل شاگرد؛
 > مرحلهٔ دوم: کادر مکتب ← تخصیص تدریس ← برنامهٔ صنفی ← حاضری ← امتحانات و
-> نتایج ← کارت نتیجه. جزئیات در [KNOWN-LIMITATIONS.md](docs/KNOWN-LIMITATIONS.md).
+> نتایج ← کارت نتیجه؛ مرحلهٔ سوم: فیس‌ها ← فاکتورها ← رسیدهای پرداخت ← مصارف ←
+> معاشات ← گزارش‌های مالی — همراه با **تفکیک سخت‌گیرانهٔ داده‌ها بین شعبه‌ها**
+> (کاربر کارتهٔ نو داده‌های خوشحال خان را نمی‌بیند؛ فقط مدیر سیستم و مدیر عام
+> به همهٔ شعبه‌ها دسترسی دارند). جزئیات در
+> [KNOWN-LIMITATIONS.md](docs/KNOWN-LIMITATIONS.md).
 
 ## Quick start (sandbox)
 
@@ -21,13 +25,16 @@ Demo logins (all fictional, synthetic data):
 
 | نقش | نام کاربری | رمز | چرا مهم است |
 |---|---|---|---|
-| مدیر سیستم | `admin` | `Admin1234` | تنظیمات، کاربران، نظارت — **بدون** اجازهٔ تایید شمولیت |
-| مدیر مکتب | `manager` | `Manager1234` | تایید/رد درخواست‌های شمولیت |
+| مدیر سیستم | `admin` | `Admin1234` | تنظیمات، کاربران، نظارت — **بدون** اجازهٔ تایید شمولیت؛ همهٔ شعبه‌ها |
+| مدیر عام | `gm` | `General1234` | **همهٔ شعبه‌ها** — تایید شمولیت، امور مالی و معاشات بدون وظایف فنی |
+| مدیر مکتب (کارتهٔ نو) | `manager` | `Manager1234` | تایید/رد درخواست‌ها؛ **فقط شعبهٔ خود** |
+| مدیر مکتب (خوشحال خان) | `manager2` | `Manager1234` | اثبات تفکیک شعبه‌ها — داده‌های کارتهٔ نو را نمی‌بیند |
 | مدیر تعلیمی | `academic` | `Academic1234` | ساختار تعلیمی |
-| مسجل | `registrar` | `Registrar1234` | ثبت درخواست، ارائه، شمول شاگرد |
+| مسجل | `registrar` | `Registrar1234` | ثبت درخواست، ارائه، شمول شاگرد — **فقط شعبهٔ خود** |
 | استاد | `teacher` | `Teacher1234` | شعبه‌های تخصیصی (۴-الف/ب، ۵-الف): ثبت حاضری و نمرات — **بدون** اجازهٔ انتشار |
-| مسئول مالی | `finance` | `Finance1234` | دیدن پایهٔ شاگرد بدون معلومات محدود |
-| صندوقدار | `cashier` | `Cashier1234` | بدون دسترسی به شمولیت‌ها |
+| استاد (خوشحال خان) | `teacher2` | `Teacher1234` | صنف ۷-الف در شعبهٔ دوم |
+| مسئول مالی | `finance` | `Finance1234` | فیس، فاکتور، وصولی، مصارف، معاشات — **فقط شعبهٔ خود** |
+| صندوقدار | `cashier` | `Cashier1234` | ثبت پرداخت بدون باطل‌کردن رسید |
 | ولی | `walikhal` | `Parent1234` | **فقط دو فرزند پیوند‌شدهٔ خود** |
 | شاگرد | `shagerd` | `Student1234` | فقط رکورد خود |
 | کتاب‌دار / منابع بشری / بازرس | `librarian` / `hr` / `auditor` | `…1234` | دیدن ماتریس اجازه‌ها |
@@ -37,9 +44,9 @@ Demo logins (all fictional, synthetic data):
 ```bash
 bun run typecheck        # tsc --noEmit → clean
 bun run lint             # eslint → clean
-bun run test             # 43 unit tests (jalali, RBAC, phase-2 rules)
-bun run test:e2e         # 97 API integration tests against the dev server
-curl localhost:3000/api/v1/openapi   # OpenAPI 3.0 spec (44 paths)
+bun run test             # 63 unit tests (jalali, RBAC, phase-2/3 rules)
+bun run test:e2e         # 140 API integration tests against the dev server
+curl localhost:3000/api/v1/openapi   # OpenAPI 3.0 spec
 ```
 
 Actual results are archived in [docs/TEST-RESULTS.md](docs/TEST-RESULTS.md).
@@ -51,10 +58,14 @@ Actual results are archived in [docs/TEST-RESULTS.md](docs/TEST-RESULTS.md).
   None+Secure behind HTTPS proxies/preview gateways), 12h sliding sessions,
   login rate limiting (5 failures / 15 min per username+IP), session
   revocation, audit trail.
-- **RBAC**: 12 default roles, 35 permissions × 6 scope kinds
+- **RBAC**: 13 default roles, 46 permissions × 6 scope kinds
   (`all / branch / year / section / own / guardian`), enforced server-side on
   every endpoint, search result, and export path. Hiding a menu is never
   authorization — the API re-checks.
+- **Branch isolation (P3)**: every user is bound to a branch; branch-scoped
+  grants without a branch fail closed. Only `admin` and the مدیر عام see
+  all branches — with a top-bar branch switcher. Forged
+  `x-maktabyar-branch` headers from branch-bound users are ignored.
 - **Admission workflow**: 6-step Dari stepper → draft → submitted →
   under_review → approved/rejected → **atomic enrollment**
   (student + guardians + links + enrollment + documents + audit + outbox in
@@ -74,6 +85,14 @@ Actual results are archived in [docs/TEST-RESULTS.md](docs/TEST-RESULTS.md).
   **missing grade ≠ zero**, publish lock with policy snapshot; report cards
   with weighted subject averages; parents/students see published results
   only.
+- **Fees & finance (P3)**: fee plans per grade/branch/period, student
+  discounts (largest active snapshotted at issue), **idempotent bulk invoice
+  issue** (re-issue skips), payments with sequential receipts —
+  overpayment rejected, **missing payment ≠ paid**, void-with-reason
+  corrections (audited, never deleted), expenses ledger with categories,
+  payroll runs (draft → approve → pay; paying books a «معاشات» expense
+  automatically), finance reports (monthly KPIs, 6-month income vs expense,
+  top debtors). Money is integer diram — never floats.
 - **Dari & RTL**: full interface in Afghan Dari, `dir="rtl" lang="fa-AF"`,
   self-hosted Vazirmatn, Afghan Solar-Hijri months (حمل…حوت), Asia/Kabul
   timezone for instants, date-only fields immune to timezone shifts,

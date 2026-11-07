@@ -41,6 +41,18 @@ export const PERMISSIONS = [
   "assessments.manage",
   "grades.enter",
   "grades.view",
+  // ── Phase 3: fees, invoices, payments, expenses, payroll ───────────
+  "fees.view",
+  "fees.manage",
+  "invoices.view",
+  "invoices.manage",
+  "payments.view",
+  "payments.collect",
+  "payments.void",
+  "expenses.view",
+  "expenses.manage",
+  "payroll.view",
+  "payroll.manage",
   "settings.view",
   "settings.manage",
   "users.view",
@@ -75,6 +87,7 @@ export interface ResolvedGrant extends Grant {
 
 export const ROLE_KEYS = [
   "admin",
+  "general_manager",
   "manager",
   "academic_manager",
   "registrar",
@@ -92,6 +105,7 @@ export type RoleKey = (typeof ROLE_KEYS)[number];
 
 export const ROLE_LABELS_DARI: Record<RoleKey, string> = {
   admin: "مدیر سیستم",
+  general_manager: "مدیر عام (همه شعبه‌ها)",
   manager: "مدیر مکتب",
   academic_manager: "مدیر تعلیمی",
   registrar: "مسجل",
@@ -104,6 +118,17 @@ export const ROLE_LABELS_DARI: Record<RoleKey, string> = {
   parent: "ولی",
   auditor: "بازرس",
 };
+
+/**
+ * BRANCH ISOLATION (Phase 3 policy):
+ *  - Only `admin` and `general_manager` hold "all"-scoped DATA grants and
+ *    may work across branches (with an optional branch context switcher).
+ *  - Every other role's data grants are branch-scoped and REQUIRE a concrete
+ *    UserRole.branchId. The scope engine fails closed when the parameter is
+ *    missing — a branch-scoped grant without a branch sees NOTHING.
+ *  - Org-level meta permissions (settings.view, roles.view, audit.view) may
+ *    stay "all": they expose system metadata, not branch business data.
+ */
 
 /**
  * Default role → grant matrix.
@@ -137,6 +162,17 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "attendance.view", scope: "all" },
     { permission: "assessments.view", scope: "all" },
     { permission: "grades.view", scope: "all" },
+    // Phase 3 — system administration configures finance structures too.
+    { permission: "fees.view", scope: "all" },
+    { permission: "fees.manage", scope: "all" },
+    { permission: "invoices.view", scope: "all" },
+    { permission: "invoices.manage", scope: "all" },
+    { permission: "payments.view", scope: "all" },
+    { permission: "payments.void", scope: "all" },
+    { permission: "expenses.view", scope: "all" },
+    { permission: "expenses.manage", scope: "all" },
+    { permission: "payroll.view", scope: "all" },
+    { permission: "payroll.manage", scope: "all" },
     { permission: "settings.view", scope: "all" },
     { permission: "settings.manage", scope: "all" },
     { permission: "users.view", scope: "all" },
@@ -147,6 +183,46 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "search.use", scope: "all" },
     // NOTE: applications.review is intentionally NOT granted to admin by
     // default — technical settings and admission decisions stay separate.
+  ],
+  general_manager: [
+    // مدیر عام — org-wide business authority across ALL branches. Sees every
+    // branch's data, approves finance, and steers admissions; still separate
+    // from admin's technical duties (no settings.manage / users.manage).
+    { permission: "dashboard.view", scope: "all" },
+    { permission: "students.view", scope: "all" },
+    { permission: "students.view_sensitive", scope: "all" },
+    { permission: "students.update", scope: "all" },
+    { permission: "students.export", scope: "all" },
+    { permission: "applications.view", scope: "all" },
+    { permission: "applications.review", scope: "all" },
+    { permission: "applications.enroll", scope: "all" },
+    { permission: "guardians.view", scope: "all" },
+    { permission: "academic.view", scope: "all" },
+    { permission: "academic.manage", scope: "all" },
+    { permission: "staff.view", scope: "all" },
+    { permission: "timetable.view", scope: "all" },
+    { permission: "attendance.view", scope: "all" },
+    { permission: "attendance.correct", scope: "all" },
+    { permission: "assessments.view", scope: "all" },
+    { permission: "assessments.manage", scope: "all" },
+    { permission: "grades.view", scope: "all" },
+    // Phase 3 — full finance authority across branches.
+    { permission: "fees.view", scope: "all" },
+    { permission: "fees.manage", scope: "all" },
+    { permission: "invoices.view", scope: "all" },
+    { permission: "invoices.manage", scope: "all" },
+    { permission: "payments.view", scope: "all" },
+    { permission: "payments.void", scope: "all" },
+    { permission: "expenses.view", scope: "all" },
+    { permission: "expenses.manage", scope: "all" },
+    { permission: "payroll.view", scope: "all" },
+    { permission: "payroll.manage", scope: "all" },
+    { permission: "settings.view", scope: "all" },
+    { permission: "users.view", scope: "all" },
+    { permission: "roles.view", scope: "all" },
+    { permission: "audit.view", scope: "all" },
+    { permission: "notifications.view", scope: "own" },
+    { permission: "search.use", scope: "all" },
   ],
   manager: [
     { permission: "dashboard.view", scope: "all" },
@@ -168,8 +244,13 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "assessments.view", scope: "branch" },
     { permission: "assessments.manage", scope: "branch" },
     { permission: "grades.view", scope: "branch" },
+    // Phase 3 — read-only financial oversight of the manager's OWN branch.
+    { permission: "invoices.view", scope: "branch" },
+    { permission: "payments.view", scope: "branch" },
+    { permission: "expenses.view", scope: "branch" },
+    { permission: "payroll.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
-    { permission: "users.view", scope: "all" },
+    { permission: "users.view", scope: "branch" },
     { permission: "roles.view", scope: "all" },
     { permission: "audit.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
@@ -227,17 +308,34 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
   ],
   finance_officer: [
     { permission: "dashboard.view", scope: "all" },
-    // Basic student visibility for collection; NO sensitive fields.
-    { permission: "students.view", scope: "all" },
-    { permission: "guardians.view", scope: "all" },
+    // Branch-bound basic student visibility for collection; NO sensitive
+    // fields (Phase 3 strict isolation: requires UserRole.branchId).
+    { permission: "students.view", scope: "branch" },
+    { permission: "guardians.view", scope: "branch" },
+    // Phase 3 — owns the fee/billing cycle of the branch.
+    { permission: "fees.view", scope: "branch" },
+    { permission: "fees.manage", scope: "branch" },
+    { permission: "invoices.view", scope: "branch" },
+    { permission: "invoices.manage", scope: "branch" },
+    { permission: "payments.view", scope: "branch" },
+    { permission: "payments.collect", scope: "branch" },
+    { permission: "payments.void", scope: "branch" },
+    { permission: "expenses.view", scope: "branch" },
+    { permission: "expenses.manage", scope: "branch" },
+    { permission: "payroll.view", scope: "branch" },
+    { permission: "payroll.manage", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
-    { permission: "search.use", scope: "all" },
+    { permission: "search.use", scope: "branch" },
   ],
   cashier: [
     { permission: "dashboard.view", scope: "all" },
-    { permission: "students.view", scope: "all" },
-    { permission: "search.use", scope: "all" },
+    { permission: "students.view", scope: "branch" },
+    // Phase 3 — collects payments against invoices of the cashier's branch.
+    { permission: "invoices.view", scope: "branch" },
+    { permission: "payments.view", scope: "branch" },
+    { permission: "payments.collect", scope: "branch" },
+    { permission: "search.use", scope: "branch" },
     { permission: "notifications.view", scope: "own" },
   ],
   teacher: [
@@ -259,20 +357,22 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
   ],
   librarian: [
     { permission: "dashboard.view", scope: "all" },
-    { permission: "students.view", scope: "all" },
-    { permission: "search.use", scope: "all" },
+    { permission: "students.view", scope: "branch" },
+    { permission: "search.use", scope: "branch" },
     { permission: "notifications.view", scope: "own" },
   ],
   hr_officer: [
     { permission: "dashboard.view", scope: "all" },
-    // Phase 2 — HR owns the staff register and staff portal accounts.
-    { permission: "staff.view", scope: "all" },
-    { permission: "staff.manage", scope: "all" },
-    { permission: "users.view", scope: "all" },
-    { permission: "users.manage", scope: "all" },
+    // Phase 2/3 — HR owns the staff register and staff portal accounts of
+    // the HR officer's OWN branch (strict isolation).
+    { permission: "staff.view", scope: "branch" },
+    { permission: "staff.manage", scope: "branch" },
+    { permission: "users.view", scope: "branch" },
+    { permission: "users.manage", scope: "branch" },
+    { permission: "payroll.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
-    { permission: "search.use", scope: "all" },
+    { permission: "search.use", scope: "branch" },
   ],
   student: [
     { permission: "dashboard.view", scope: "all" },
@@ -289,26 +389,36 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     // Phase 2 — children's published results and attendance.
     { permission: "attendance.view", scope: "guardian" },
     { permission: "grades.view", scope: "guardian" },
+    // Phase 3 — fee invoices of the guardian's own children.
+    { permission: "invoices.view", scope: "guardian" },
     { permission: "notifications.view", scope: "own" },
   ],
   auditor: [
     { permission: "dashboard.view", scope: "all" },
-    { permission: "students.view", scope: "all" },
-    { permission: "applications.view", scope: "all" },
-    { permission: "guardians.view", scope: "all" },
-    { permission: "academic.view", scope: "all" },
+    // Strict branch isolation (Phase 3): read-only oversight of the
+    // auditor's OWN branch; org-level meta (audit log) stays org-wide.
+    { permission: "students.view", scope: "branch" },
+    { permission: "applications.view", scope: "branch" },
+    { permission: "guardians.view", scope: "branch" },
+    { permission: "academic.view", scope: "branch" },
     // Phase 2 — strictly read-only academic oversight.
-    { permission: "staff.view", scope: "all" },
-    { permission: "timetable.view", scope: "all" },
-    { permission: "attendance.view", scope: "all" },
-    { permission: "assessments.view", scope: "all" },
-    { permission: "grades.view", scope: "all" },
+    { permission: "staff.view", scope: "branch" },
+    { permission: "timetable.view", scope: "branch" },
+    { permission: "attendance.view", scope: "branch" },
+    { permission: "assessments.view", scope: "branch" },
+    { permission: "grades.view", scope: "branch" },
+    // Phase 3 — read-only finance oversight within the branch.
+    { permission: "fees.view", scope: "branch" },
+    { permission: "invoices.view", scope: "branch" },
+    { permission: "payments.view", scope: "branch" },
+    { permission: "expenses.view", scope: "branch" },
+    { permission: "payroll.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
-    { permission: "users.view", scope: "all" },
+    { permission: "users.view", scope: "branch" },
     { permission: "roles.view", scope: "all" },
     { permission: "audit.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
-    { permission: "search.use", scope: "all" },
+    { permission: "search.use", scope: "branch" },
   ],
 };
 

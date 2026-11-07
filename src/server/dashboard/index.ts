@@ -2,7 +2,7 @@
 // computed from live data with the caller's scope applied.
 
 import { db } from "@/lib/db";
-import { studentListWhere } from "@/server/rbac/scope";
+import { studentListWhere, sectionListWhere, directBranchFilter } from "@/server/rbac/scope";
 import { todayIsoKabul, jalaliWeekdayName, formatJalali, afghanWeekdayIndex } from "@/server/shared/jalali";
 import type { AuthContext } from "@/server/auth/context";
 import { can } from "@/server/rbac/scope";
@@ -41,9 +41,13 @@ export async function dashboardSummary(ctx: AuthContext) {
 
   // ── Application funnel (permission-aware) ──────────────────────────────
   if (can(ctx, "applications.view") && currentYear) {
+    const branchScope = directBranchFilter(ctx, "applications.view");
     const groups = await db.application.groupBy({
       by: ["status"],
-      where: { academicYearId: currentYear.id },
+      where: {
+        academicYearId: currentYear.id,
+        ...(branchScope?.branchIds ? { branchId: { in: branchScope.branchIds } } : {}),
+      },
       _count: { _all: true },
     });
     base.applications = groups.map((g) => ({
@@ -56,14 +60,17 @@ export async function dashboardSummary(ctx: AuthContext) {
 
   // ── Sections & capacity (academic.view) ────────────────────────────────
   if (can(ctx, "academic.view") && currentYear) {
-    const sections = await db.classSection.findMany({
-      where: { academicYearId: currentYear.id },
-      include: {
-        gradeLevel: { select: { nameDari: true } },
-        _count: { select: { enrollments: { where: { status: "active" } } } },
-      },
-      orderBy: { gradeLevelId: "asc" },
-    });
+    const scopeWhere = await sectionListWhere(ctx, "academic.view");
+    const sections = scopeWhere === null
+      ? []
+      : await db.classSection.findMany({
+          where: { academicYearId: currentYear.id, ...scopeWhere },
+          include: {
+            gradeLevel: { select: { nameDari: true } },
+            _count: { select: { enrollments: { where: { status: "active" } } } },
+          },
+          orderBy: { gradeLevelId: "asc" },
+        });
     base.sections = {
       count: sections.length,
       totalCapacity: sections.reduce((s, x) => s + x.capacity, 0),
@@ -241,9 +248,11 @@ export async function dashboardSummary(ctx: AuthContext) {
   // ── Phase 2: attendance KPIs for managers (branch overview) ────────────
   if (can(ctx, "attendance.view") && !can(ctx, "attendance.record") && currentYear) {
     const today = todayIsoKabul();
+    const scopeWhere = await sectionListWhere(ctx, "attendance.view");
+    const sectionFilter = scopeWhere === null ? { id: "__none__" } : scopeWhere;
     const [submittedToday, openTodayCount] = await Promise.all([
-      db.attendanceSession.count({ where: { date: today, status: "submitted" } }),
-      db.attendanceSession.count({ where: { date: today, status: "open" } }),
+      db.attendanceSession.count({ where: { date: today, status: "submitted", classSection: sectionFilter } }),
+      db.attendanceSession.count({ where: { date: today, status: "open", classSection: sectionFilter } }),
     ]);
     base.attendanceOverviewToday = { submitted: submittedToday, open: openTodayCount };
   }

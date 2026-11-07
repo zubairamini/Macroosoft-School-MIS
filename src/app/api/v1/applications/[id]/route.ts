@@ -9,9 +9,9 @@ type P = { params: Promise<{ id: string }> };
 
 export const GET = withApi<P>(
   { permission: "applications.view" },
-  async (_req: NextRequest, ctx: P) => {
+  async (_req: NextRequest, ctx: P & { auth: AuthContext }) => {
     const { id } = await ctx.params;
-    return jsonOk(await getApplication(id));
+    return jsonOk(await getApplication(ctx.auth, id));
   },
 );
 

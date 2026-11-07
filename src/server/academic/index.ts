@@ -8,6 +8,7 @@ import { errors } from "@/server/shared/http";
 import { writeAudit } from "@/server/shared/audit";
 import { isValidIsoDateOnly, normalizePhone } from "@/server/shared/normalization";
 import { parseJalaliInput, jalaliToIso } from "@/server/shared/jalali";
+import { sectionListWhere } from "@/server/rbac/scope";
 import type { AuthContext } from "@/server/auth/context";
 
 // ── DTOs ────────────────────────────────────────────────────────────────────
@@ -102,20 +103,37 @@ export async function requireOrg() {
   return org;
 }
 
-export async function getOrgContext() {
+export async function getOrgContext(ctx?: { ownBranchIds?: string[]; isCrossBranch?: boolean } | null) {
   const org = await getOrg();
   if (!org) return { org: null, branches: [], currentYear: null, shifts: [] };
+  // Branch isolation: cross-branch users (admin / مدیر عام) see every active
+  // branch; branch-bound users see only their own; others see none.
+  const branchWhere =
+    ctx && ctx.isCrossBranch
+      ? { isActive: true }
+      : ctx && ctx.ownBranchIds && ctx.ownBranchIds.length > 0
+        ? { isActive: true, id: { in: ctx.ownBranchIds } }
+        : ctx
+          ? { isActive: true, id: { in: ["__none__"] } }
+          : { isActive: true };
   const [branches, currentYear, shifts] = await Promise.all([
-    db.branch.findMany({ where: { isActive: true }, orderBy: { createdAt: "asc" } }),
+    db.branch.findMany({ where: branchWhere, orderBy: { createdAt: "asc" } }),
     db.academicYear.findFirst({ where: { orgId: org.id, isCurrent: true } }),
     db.shift.findMany({ where: { orgId: org.id } }),
   ]);
   return { org, branches, currentYear, shifts };
 }
 
-export async function listBranches() {
+export async function listBranches(ctx?: { ownBranchIds?: string[]; isCrossBranch?: boolean } | null) {
   const org = await requireOrg();
-  return db.branch.findMany({ where: { orgId: org.id }, orderBy: { createdAt: "asc" } });
+  const where = ctx && ctx.isCrossBranch
+    ? { orgId: org.id }
+    : ctx && ctx.ownBranchIds && ctx.ownBranchIds.length > 0
+      ? { orgId: org.id, id: { in: ctx.ownBranchIds } }
+      : ctx
+        ? { orgId: org.id, id: { in: ["__none__"] } }
+        : { orgId: org.id };
+  return db.branch.findMany({ where, orderBy: { createdAt: "asc" } });
 }
 
 export async function listAcademicYears() {
@@ -131,18 +149,24 @@ export async function listGradeLevels() {
   return db.gradeLevel.findMany({ where: { orgId: org.id }, orderBy: { level: "asc" } });
 }
 
-export async function listClassSections(filters: {
+export async function listClassSections(ctx: AuthContext, filters: {
   academicYearId?: string;
   gradeLevelId?: string;
   branchId?: string;
 }) {
   const org = await requireOrg();
+  // Branch isolation via the scope engine (fail-closed). Null = no grant.
+  const scopeWhere = await sectionListWhere(ctx, "academic.view");
+  if (scopeWhere === null) return [];
   return db.classSection.findMany({
     where: {
-      academicYearId: filters.academicYearId,
-      gradeLevelId: filters.gradeLevelId,
-      branchId: filters.branchId,
-      academicYear: { orgId: org.id },
+      AND: [
+        scopeWhere,
+        { academicYear: { orgId: org.id } },
+        ...(filters.academicYearId ? [{ academicYearId: filters.academicYearId }] : []),
+        ...(filters.gradeLevelId ? [{ gradeLevelId: filters.gradeLevelId }] : []),
+        ...(filters.branchId ? [{ branchId: filters.branchId }] : []),
+      ],
     },
     orderBy: [{ gradeLevelId: "asc" }, { label: "asc" }],
     include: {

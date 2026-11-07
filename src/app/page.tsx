@@ -21,6 +21,12 @@ import { TimetableView } from "@/features/timetable/timetable-view";
 import { AttendanceView } from "@/features/attendance/attendance-view";
 import { ExamsView } from "@/features/exams/exams-view";
 import { SettingsView } from "@/features/settings/settings-view";
+import { FeesView } from "@/features/finance/fees-view";
+import { InvoicesView } from "@/features/finance/invoices-view";
+import { PaymentsView } from "@/features/finance/payments-view";
+import { ExpensesView } from "@/features/finance/expenses-view";
+import { PayrollView } from "@/features/finance/payroll-view";
+import { FinanceReportsView } from "@/features/finance/finance-reports-view";
 import { RoadmapView } from "@/features/shared/roadmap-view";
 import { hasGrant } from "@/app-shell/shell";
 import { EmptyState, PageSkeleton } from "@/components/shared";
@@ -149,6 +155,22 @@ function AppRoutes() {
     content = hasGrant(me, "attendance.view") ? <AttendanceView /> : <NoPermissionView />;
   } else if (a === "exams") {
     content = hasGrant(me, "assessments.view") ? <ExamsView /> : <NoPermissionView />;
+  } else if (a === "finance") {
+    if (b === "fees" || !b) {
+      content = hasGrant(me, "fees.view") ? <FeesView /> : <NoPermissionView />;
+    } else if (b === "invoices") {
+      content = hasGrant(me, "invoices.view") ? <InvoicesView /> : <NoPermissionView />;
+    } else if (b === "payments") {
+      content = hasGrant(me, "payments.view") ? <PaymentsView /> : <NoPermissionView />;
+    } else if (b === "expenses") {
+      content = hasGrant(me, "expenses.view") ? <ExpensesView /> : <NoPermissionView />;
+    } else if (b === "payroll") {
+      content = hasGrant(me, "payroll.view") ? <PayrollView /> : <NoPermissionView />;
+    } else if (b === "reports") {
+      content = hasGrant(me, "invoices.view") ? <FinanceReportsView /> : <NoPermissionView />;
+    } else {
+      content = <NoPermissionView />;
+    }
   } else if (a === "settings") {
     content = <SettingsView tab={b ?? "org"} />;
   } else if (a === "roadmap") {

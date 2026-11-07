@@ -5,11 +5,15 @@
 "use client";
 
 import { Fragment, useMemo, useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -24,7 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
   Bell, ChevronsLeft, ChevronsRight, LogOut, Menu, PanelRightClose, Search,
-  Settings2, UserCog, KeyRound, School, MapPin, Clock,
+  Settings2, UserCog, KeyRound, School, MapPin, Clock, GitBranch,
 } from "lucide-react";
 import { useMe, useLogout, useOrgContext, useGlobalSearch, useNotifications, useMarkNotificationsRead, useChangePassword } from "@/lib/api/hooks";
 import type { MeResponse } from "@/lib/api/client";
@@ -334,6 +338,7 @@ function UserMenu({ me }: { me: MeResponse }) {
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "مدیر سیستم",
+  general_manager: "مدیر عام",
   manager: "مدیر مکتب",
   academic_manager: "مدیر تعلیمی",
   registrar: "مسجل",
@@ -346,6 +351,69 @@ const ROLE_LABELS: Record<string, string> = {
   parent: "ولی",
   auditor: "بازرس",
 };
+
+// ── Branch context (admin / مدیر عام switch freely; branch users pinned) ──
+
+function BranchContext() {
+  const { data: me } = useMe();
+  const { data: orgCtx } = useOrgContext();
+  const qc = useQueryClient();
+
+  if (!me) return null;
+
+  // Branch-bound user with exactly one branch → fixed badge.
+  const single = !me.isCrossBranch && me.ownBranchIds.length === 1;
+  const multi = me.isCrossBranch || me.ownBranchIds.length > 1;
+
+  const switchable = multi
+    ? me.isCrossBranch
+      ? orgCtx?.branches ?? []
+      : (orgCtx?.branches ?? []).filter((b) => me.ownBranchIds.includes(b.id))
+    : [];
+
+  const activeName =
+    orgCtx?.branches.find((b) => b.id === me.branchId)?.name ?? "همه شعبه‌ها";
+
+  async function switchBranch(id: string) {
+    window.localStorage.setItem("maktabyar:branch", id);
+    // Refetch every query with the new branch context header.
+    await qc.invalidateQueries();
+  }
+
+  if (switchable.length === 0 && !single) return null;
+
+  return (
+    <div className="hidden items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-2.5 py-1 md:flex">
+      <GitBranch className="h-3.5 w-3.5 text-primary" />
+      {multi ? (
+        <Select value={me.branchId ?? "all"} onValueChange={switchBranch}>
+          <SelectTrigger
+            size="sm"
+            className="h-6 w-44 gap-1 border-0 bg-transparent px-1 text-xs font-semibold shadow-none focus:ring-0"
+            aria-label="انتخاب شعبه"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {me.isCrossBranch ? (
+              <SelectItem value="all">همه شعبه‌ها</SelectItem>
+            ) : null}
+            {switchable.map((b) => (
+              <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <span className="max-w-40 truncate text-xs text-muted-foreground">
+          {activeName}
+        </span>
+      )}
+      {me.isCrossBranch && !me.branchId ? (
+        <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">نمای کلی</Badge>
+      ) : null}
+    </div>
+  );
+}
 
 // ── Shell ───────────────────────────────────────────────────────────────────
 
@@ -394,6 +462,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
       crumbs.push({ label: labels[tab] ?? tab });
     }
     if (a === "roadmap") crumbs.push({ label: "بخش‌های آینده" });
+    if (a === "finance") {
+      crumbs.push({ label: "امور مالی" });
+      const labels: Record<string, string> = {
+        fees: "فیس‌ها و تخفیف‌ها", invoices: "فاکتورها", payments: "رسیدهای پرداخت",
+        expenses: "مصارف", payroll: "معاشات", reports: "گزارش مالی",
+      };
+      crumbs.push({ label: labels[b ?? ""] ?? b ?? "" });
+    }
     if (crumbs.length === 0) crumbs.push({ label: "مکتب‌یار" });
     return crumbs;
   }, [route]);
@@ -471,12 +547,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <span className="text-xs font-semibold">
               سال تعلیمی {orgCtx?.currentYear?.name ?? "—"}
             </span>
-            <Separator orientation="vertical" className="mx-1 h-4" />
-            <MapPin className="h-3.5 w-3.5 text-primary" />
-            <span className="max-w-40 truncate text-xs text-muted-foreground">
-              {orgCtx?.branches.find((b) => b.id === me?.branchId)?.name ?? "—"}
-            </span>
           </div>
+
+          <BranchContext />
 
           <div className="order-last w-full md:order-none md:flex-1 md:w-auto">
             <GlobalSearch />

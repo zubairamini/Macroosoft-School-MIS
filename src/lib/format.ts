@@ -93,3 +93,44 @@ export function faPercent(v: number | null | undefined): string {
   if (v === null || v === undefined) return "—";
   return toPersianDigits(String(v)).replace(".", "٫") + "٪";
 }
+
+// ── Phase 3: money (diram → AFN display) ────────────────────────────────────
+
+/** Diram (integer minor units) → «۱٬۲۵۰ افغانی»; 125000 → "۱٬۲۵۰ افغانی".
+ *  Non-integer AFN keeps two decimals: 12550 → «۱۲۵٫۵۰ افغانی». */
+export function faMoney(diram: number | null | undefined): string {
+  if (diram === null || diram === undefined) return "—";
+  const afn = diram / 100;
+  const isInt = Number.isInteger(afn);
+  const s = isInt ? String(afn) : afn.toFixed(2);
+  // group thousands with the Arabic thousands separator «٬»
+  const [intPart, decPart] = s.split(".");
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, "٬");
+  const persian = toPersianDigits(decPart ? `${grouped}.${decPart}` : grouped).replace(".", "٫");
+  return `${persian} افغانی`;
+}
+
+/** Compact money for table cells: «۱٬۲۵۰» without the currency word. */
+export function faMoneyNum(diram: number | null | undefined): string {
+  if (diram === null || diram === undefined) return "—";
+  return faMoney(diram).replace(" افغانی", "");
+}
+
+/** AFN input (string from a form) → diram integer; null when invalid/empty. */
+export function afnToDiram(input: string): number | null {
+  const cleaned = input.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+    .replace(/[,٬،\s]/g, "")
+    .replace(/٫|\./g, ".");
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+/** Diram → AFN string for form inputs (e.g. 125000 → "1250"). */
+export function diramToAfnInput(diram: number | null | undefined): string {
+  if (diram === null || diram === undefined) return "";
+  const afn = diram / 100;
+  return Number.isInteger(afn) ? String(afn) : afn.toFixed(2);
+}

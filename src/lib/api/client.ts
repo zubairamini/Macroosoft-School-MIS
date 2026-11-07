@@ -30,6 +30,14 @@ async function request<T>(
   path: string,
   init?: RequestInit & { meta?: "list" },
 ): Promise<{ data: T; meta?: Record<string, unknown> }> {
+  // Active branch context for admin / general_manager (and multi-branch
+  // users). Empty string / "all" = org-wide. The SERVER re-validates this
+  // hint against the user's own branches — it is never trusted blindly.
+  let branchHeader: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    const b = window.localStorage.getItem("maktabyar:branch");
+    if (b && b !== "all") branchHeader = { "x-maktabyar-branch": b };
+  }
   let res: Response;
   try {
     res = await fetch(`/api/v1${path}`, {
@@ -37,6 +45,7 @@ async function request<T>(
       headers: {
         "Content-Type": "application/json",
         "x-maktabyar-client": "1",
+        ...branchHeader,
         ...(init?.headers ?? {}),
       },
       credentials: "same-origin",
@@ -95,6 +104,10 @@ export interface MeResponse {
     sectionIds: string[];
   }>;
   branchId: string | null;
+  /** Branches this user is bound to (UserRole.branchId values). */
+  ownBranchIds: string[];
+  /** Only admin / general_manager may cross branch boundaries. */
+  isCrossBranch: boolean;
 }
 
 export interface OrgContext {
@@ -508,4 +521,155 @@ export interface RecentGradeDto {
   maxScore: number;
   isAbsent: boolean;
   at: string;
+}
+
+// ── Phase 3 DTOs (finance) ──────────────────────────────────────────────────
+
+export interface FeeStructureDto {
+  id: string;
+  academicYearId: string;
+  branchId: string | null;
+  branchName: string | null;
+  name: string;
+  gradeLevels: number[];
+  periodKind: string;
+  periodKindLabel: string;
+  amountDiram: number;
+  isActive: boolean;
+  note: string | null;
+  invoiceCount: number;
+  createdAt: string;
+}
+
+export interface DiscountDto {
+  id: string;
+  academicYearId: string;
+  studentId: string;
+  studentNumber: string;
+  studentName: string;
+  kind: string;
+  value: number;
+  reason: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface InvoicePaymentDto {
+  id: string;
+  receiptNumber: string;
+  amountDiram: number;
+  method: string;
+  methodLabel: string;
+  date: string;
+  note: string | null;
+  voidedAt: string | null;
+  createdAt: string;
+}
+
+export interface InvoiceDto {
+  id: string;
+  invoiceNumber: string;
+  academicYearId: string;
+  branchId: string;
+  branchName: string | null;
+  studentId: string;
+  studentNumber: string;
+  studentName: string;
+  fatherName: string;
+  feeStructureId: string | null;
+  feeStructureName: string | null;
+  periodKey: string;
+  periodLabel: string;
+  amountDiram: number;
+  discountDiram: number;
+  netDiram: number;
+  paidDiram: number;
+  balanceDiram: number;
+  status: string;
+  statusLabel: string;
+  dueDate: string | null;
+  note: string | null;
+  voidReason: string | null;
+  createdAt: string;
+  payments: InvoicePaymentDto[];
+}
+
+export interface PaymentDto {
+  id: string;
+  receiptNumber: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  periodLabel: string;
+  studentId: string;
+  studentNumber: string;
+  studentName: string;
+  branchId: string;
+  branchName: string | null;
+  amountDiram: number;
+  method: string;
+  methodLabel: string;
+  date: string;
+  note: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  createdAt: string;
+}
+
+export interface ExpenseDto {
+  id: string;
+  expenseNumber: string;
+  branchId: string;
+  branchName: string | null;
+  date: string;
+  category: string;
+  categoryLabel: string;
+  payee: string | null;
+  amountDiram: number;
+  note: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  createdAt: string;
+}
+
+export interface PayrollItemDto {
+  id: string;
+  staffId: string;
+  staffName: string;
+  position: string;
+  payslipNumber: string;
+  baseDiram: number;
+  allowanceDiram: number;
+  bonusDiram: number;
+  deductionDiram: number;
+  netDiram: number;
+  note: string | null;
+}
+
+export interface PayrollRunDto {
+  id: string;
+  branchId: string;
+  branchName: string | null;
+  academicYearId: string;
+  periodKey: string;
+  periodLabel: string;
+  status: string;
+  statusLabel: string;
+  totalsDiram: number;
+  staffCount: number;
+  note: string | null;
+  approvedAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  items: PayrollItemDto[];
+}
+
+export interface FinanceReportsDto {
+  month: { key: string; label: string };
+  collection: { totalDiram: number; count: number };
+  invoiced: { totalNetDiram: number; count: number };
+  outstanding: { totalDiram: number; count: number };
+  expenses: { totalDiram: number; count: number };
+  payroll: { totalDiram: number; runsCount: number };
+  series: Array<{ key: string; label: string; incomeDiram: number; expenseDiram: number }>;
+  topDebtors: Array<{ studentId: string; studentNumber: string; name: string; balance: number; branchName: string }>;
 }

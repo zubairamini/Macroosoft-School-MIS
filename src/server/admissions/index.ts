@@ -23,6 +23,7 @@ import { errors, ApiError } from "@/server/shared/http";
 import { writeAudit, writeOutbox, nextDocNumber } from "@/server/shared/audit";
 import { normalizeDariText, normalizePhone } from "@/server/shared/normalization";
 import { dateInput } from "@/server/academic";
+import { canAccessBranch, directBranchFilter } from "@/server/rbac/scope";
 import type { AuthContext } from "@/server/auth/context";
 import type { Prisma } from "@prisma/client";
 
@@ -161,10 +162,15 @@ export function applicationToJson(row: {
   };
 }
 
-export async function listApplications(filters: {
+export async function listApplications(ctx: AuthContext, filters: {
   q?: string; status?: string; academicYearId?: string; page: number; pageSize: number;
 }) {
   const where: Prisma.ApplicationWhereInput = {};
+  // Branch isolation: branch-bound roles see only their own branch's
+  // applications; cross-branch roles see the active context (or all).
+  const branchScope = directBranchFilter(ctx, "applications.view");
+  if (!branchScope) return { items: [], meta: { total: 0, page: filters.page, pageSize: filters.pageSize } };
+  if (branchScope.branchIds) where.branchId = { in: branchScope.branchIds };
   if (filters.status && APPLICATION_STATUSES.includes(filters.status as ApplicationStatus)) {
     where.status = filters.status;
   }
@@ -197,7 +203,7 @@ export async function listApplications(filters: {
   };
 }
 
-export async function getApplication(id: string) {
+export async function getApplication(ctx: AuthContext, id: string) {
   const row = await db.application.findUnique({
     where: { id },
     include: {
@@ -206,6 +212,9 @@ export async function getApplication(id: string) {
     },
   });
   if (!row) throw errors.notFound("درخواست شمولیت");
+  if (row.branchId && !canAccessBranch(ctx, "applications.view", row.branchId)) {
+    throw errors.forbidden("این درخواست به شعبهٔ دیگری تعلق دارد.");
+  }
   return applicationToJson(row);
 }
 
@@ -308,12 +317,16 @@ export async function createApplication(ctx: AuthContext, dto: z.infer<typeof ap
     throw new ApiError(400, "VALIDATION_ERROR", "یک ولی باید به عنوان ولیٔ اصلی مشخص شود.");
   }
 
+  // Branch isolation: applications belong to the creator's active branch.
+  const branchId = ctx.branchId;
+
   return db.$transaction(async (tx) => {
     const applicantNumber = await genApplicantNumber(tx, year.name);
     const row = await tx.application.create({
       data: {
         orgId: org.id,
         academicYearId: year.id,
+        branchId,
         applicantNumber,
         personal: JSON.stringify(dto.personal),
         requestedGradeId: grade.id,
@@ -345,6 +358,9 @@ export async function updateApplication(
 ) {
   const row = await db.application.findUnique({ where: { id } });
   if (!row) throw errors.notFound("درخواست شمولیت");
+  if (row.branchId && !canAccessBranch(ctx, "applications.update", row.branchId)) {
+    throw errors.forbidden("این درخواست به شعبهٔ دیگری تعلق دارد.");
+  }
   if (row.status !== "draft") {
     throw errors.badRequest(
       "فقط درخواست‌های در حالت پیش‌نویس قابل ویرایش هستند. برای تغییر بعد از ارائه، ابتدا با مسجل تماس بگیرید.",
@@ -395,6 +411,15 @@ export async function transitionApplication(
 ) {
   const row = await db.application.findUnique({ where: { id } });
   if (!row) throw errors.notFound("درخواست شمولیت");
+  // Branch isolation — checked with the permission the transition itself
+  // requires (submit ≠ review ≠ update).
+  const transitionPermission =
+    transition === "submit" ? "applications.submit"
+    : transition === "cancel" ? "applications.update"
+    : "applications.review";
+  if (row.branchId && !canAccessBranch(ctx, transitionPermission, row.branchId)) {
+    throw errors.forbidden("این درخواست به شعبهٔ دیگری تعلق دارد.");
+  }
 
   const allowed: Record<string, Partial<Record<ApplicationStatus, ApplicationStatus>>> = {
     submit: { draft: "submitted" },
@@ -472,6 +497,9 @@ export async function enrollApplication(
     include: { academicYear: true, gradeLevel: true },
   });
   if (!row) throw errors.notFound("درخواست شمولیت");
+  if (row.branchId && !canAccessBranch(ctx, "applications.enroll", row.branchId)) {
+    throw errors.forbidden("این درخواست به شعبهٔ دیگری تعلق دارد.");
+  }
   if (row.status !== "approved") {
     throw errors.badRequest(
       `فقط درخواست‌های تاییدشده قابل شمول هستند. وضعیت فعلی: «${statusLabel(row.status)}».`,
@@ -482,6 +510,10 @@ export async function enrollApplication(
     include: { gradeLevel: true, academicYear: true },
   });
   if (!section) throw errors.notFound("شعبهٔ صنف");
+  // Branch isolation: the target section must belong to an accessible branch.
+  if (!canAccessBranch(ctx, "applications.enroll", section.branchId)) {
+    throw errors.forbidden("شعبهٔ صنف انتخاب‌شده به شعبهٔ دیگری تعلق دارد.");
+  }
   if (section.academicYearId !== row.academicYearId) {
     throw errors.badRequest("شعبهٔ صنف انتخاب‌شده به سال تعلیمی این درخواست تعلق ندارد.");
   }
