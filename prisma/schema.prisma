@@ -98,6 +98,8 @@ model Organization {
   guestVisits     GuestVisit[]
   schoolEvents    SchoolEvent[]
   promotionDecisions PromotionDecision[]
+  // Phase 7 — discipline & behavior register
+  disciplineIncidents DisciplineIncident[]
 }
 
 model Branch {
@@ -118,6 +120,8 @@ model Branch {
   classSections  ClassSection[]
   userRoles      UserRole[]
   staffMembers   StaffMember[]
+  // Phase 7 — discipline incidents of this branch
+  disciplineIncidents DisciplineIncident[]
 
   // Phase 3 — finance rows of this branch
   feeStructures  FeeStructure[]
@@ -311,6 +315,8 @@ model User {
   // Phase 4 — announcement read receipts & sent message logs
   announcementReads AnnouncementRead[]
   sentMessages       MessageLog[]
+  // Phase 7 — discipline incidents recorded by this account
+  disciplineIncidents DisciplineIncident[] @relation("DisciplineRecorder")
 
   @@index([guardianId])
 }
@@ -472,6 +478,8 @@ model Student {
   bookLoans        BookLoan[]
   transportPassengers TransportPassenger[]
   promotionDecisions  PromotionDecision[]
+  // Phase 7 — behavior & discipline register
+  disciplineIncidents DisciplineIncident[]
 
   @@index([orgId, status])
 }
@@ -1348,4 +1356,43 @@ model PromotionDecision {
   // INVARIANT: one decision per student per closing year.
   @@unique([academicYearId, studentId])
   @@index([academicYearId, decision])
+}
+
+// ── Discipline & behavior register — Phase 7 ──────────────────────────────
+//
+// ONE REGISTER, BOTH POLARITIES: kind "merit" records positive behavior;
+// every other kind is an incident. Deletion is allowed for recording mistakes
+// but always audit-logged (before snapshot), and resolved incidents keep a
+// followUpNote + resolvedAt trail. Branch isolation follows the Phase 3
+// policy: rows carry a concrete branchId; teachers act only on students of
+// their own class sections (scope "section"); admin / مدیر عام cross branches.
+
+model DisciplineIncident {
+  id          String   @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  branchId    String
+  branch      Branch   @relation(fields: [branchId], references: [id])
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id])
+  // date-only ISO "YYYY-MM-DD" (Asia/Kabul local date)
+  date        String
+  // "late" | "absent" | "misconduct" | "damage" | "fight" | "dress" | "other"
+  //          | "merit" (positive entry)
+  kind        String
+  // "low" | "medium" | "high"
+  severity    String   @default("low")
+  description String
+  // "counseling" | "parent_notified" | "warning" | "suspension" | "none"
+  actionTaken String?  @default("none")
+  followUpNote String?
+  resolvedAt  DateTime?
+  recordedById String
+  recordedBy  User     @relation("DisciplineRecorder", fields: [recordedById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([branchId, date])
+  @@index([studentId, date])
+  @@index([kind])
 }

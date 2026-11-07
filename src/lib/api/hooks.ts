@@ -19,6 +19,7 @@ import type {
   TransportRouteDto, TransportPassengerDto, InventoryItemDto, InventoryMovementDto,
   GuestVisitDto, SchoolEventDto, ReportTableDto,
   RolloverPreviewDto, RolloverApplyResultDto,
+  BranchMasterDto, DisciplineIncidentDto, AnalyticsOverviewDto,
 } from "./client";
 
 function qs(params: Record<string, string | number | undefined | null>): string {
@@ -1201,6 +1202,102 @@ export function useRolloverApply() {
       qc.invalidateQueries({ queryKey: ["org-context"] });
       qc.invalidateQueries({ queryKey: ["students"] });
     },
+  });
+}
+
+// ── Phase 6: branch master data, attendance draft delete ─────────────────────
+
+export function useBranchesMaster() {
+  return useQuery({
+    queryKey: ["branches-master"],
+    queryFn: async () => (await api.get<BranchMasterDto[]>("/branches")).data,
+  });
+}
+
+export function useCreateBranch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<unknown>("/branches", vars)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["branches-master"] });
+      qc.invalidateQueries({ queryKey: ["org-context"] });
+    },
+  });
+}
+
+export function useUpdateBranch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; body: Record<string, unknown> }) =>
+      (await api.patch<unknown>(`/branches/${vars.id}`, vars.body)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["branches-master"] });
+      qc.invalidateQueries({ queryKey: ["org-context"] });
+    },
+  });
+}
+
+export function useDeleteAttendanceSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { sessionId: string }) =>
+      (await api.del<unknown>(`/attendance/sessions/${vars.sessionId}`)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance-sessions"] });
+      qc.invalidateQueries({ queryKey: ["attendance-session"] });
+      qc.invalidateQueries({ queryKey: ["attendance-summary"] });
+    },
+  });
+}
+
+// ── Phase 7: discipline & behavior register ─────────────────────────────────
+
+export function useDisciplineIncidents(filters: {
+  studentId?: string; kind?: string; severity?: string; resolved?: string;
+  from?: string; to?: string;
+} = {}) {
+  return useQuery({
+    queryKey: ["discipline", filters.studentId ?? "", filters.kind ?? "",
+      filters.severity ?? "", filters.resolved ?? "", filters.from ?? "", filters.to ?? ""],
+    queryFn: async () =>
+      (await api.get<DisciplineIncidentDto[]>(`/discipline${qs(filters)}`)).data,
+  });
+}
+
+export function useCreateDisciplineIncident() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<DisciplineIncidentDto>("/discipline", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["discipline"] }),
+  });
+}
+
+export function useUpdateDisciplineIncident() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; body: Record<string, unknown> }) =>
+      (await api.patch<DisciplineIncidentDto>(`/discipline/${vars.id}`, vars.body)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["discipline"] }),
+  });
+}
+
+export function useDeleteDisciplineIncident() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string }) =>
+      (await api.del<unknown>(`/discipline/${vars.id}`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["discipline"] }),
+  });
+}
+
+// ── Phase 8: analytics overview ──────────────────────────────────────────────
+
+export function useAnalyticsOverview() {
+  return useQuery({
+    queryKey: ["analytics-overview"],
+    queryFn: async () => (await api.get<AnalyticsOverviewDto>("/analytics/overview")).data,
   });
 }
 

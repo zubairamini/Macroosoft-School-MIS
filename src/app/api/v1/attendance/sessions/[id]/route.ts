@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { withApi } from "@/server/auth/guard";
 import { jsonOk } from "@/server/shared/http";
 import { parseBody } from "@/server/shared/validation";
-import { getSession, saveRecords, saveRecordsDto } from "@/server/attendance";
+import { getSession, saveRecords, saveRecordsDto, deleteSession } from "@/server/attendance";
 import type { AuthContext } from "@/server/auth/context";
 
 type P = { params: Promise<{ id: string }> };
@@ -22,5 +22,15 @@ export const PUT = withApi<P>(
     const { id } = await ctx.params;
     const dto = await parseBody(req, saveRecordsDto);
     return jsonOk(await saveRecords(ctx.auth, id, dto));
+  },
+);
+
+/** Phase 6 — delete an OPEN (draft) session with its marks. Submitted
+ *  sessions are statistical history and can only be reopened, never deleted. */
+export const DELETE = withApi<P>(
+  { permission: "attendance.record" },
+  async (_req: NextRequest, ctx: P & { auth: AuthContext }) => {
+    const { id } = await ctx.params;
+    return jsonOk(await deleteSession(ctx.auth, id));
   },
 );

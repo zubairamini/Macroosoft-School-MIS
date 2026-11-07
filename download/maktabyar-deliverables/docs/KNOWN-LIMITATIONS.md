@@ -12,9 +12,13 @@ Nothing here is hidden behind marketing language.
 | 3 | Fees & discounts, invoices, payments/receipts, expenses, payroll, financial reports, **strict branch isolation** | ✅ **Delivered & verified** |
 | 4 | Library, announcements/messages, ID cards & printing, guardian/student portal | ✅ **Delivered & verified** (this release) |
 | 5 | Services (transport/inventory/guests/events), reports & CSV export, **repeat-safe year-end rollover**, security hardening | ✅ **Delivered & verified** (this release) |
+| 6 | **Branch master-data CRUD** (stats, create/edit/deactivate — admin/مدیر عام only), attendance draft deletion, compact role+branch+sections user form & change-role | ✅ **Delivered & verified** (this release) |
+| 7 | **Discipline & behavior register** — incidents + merits, severity/actions, follow-up & resolution trail, full CRUD with audit, teacher = own sections, manager = own branch | ✅ **Delivered & verified** (this release) |
+| 8 | **Analytics** — KPIs, six Solar-Hijri-month trends (attendance/discipline/finance), **at-risk students** (attendance < 80%, average < 40%, overdue balance) | ✅ **Delivered & verified** (this release) |
 
-All five phases of the original specification are now implemented. The
-remaining items below are honest gaps, not hidden roadmap claims.
+All five phases of the original specification plus the three extension
+phases (6–8) are now implemented. The remaining items below are honest
+gaps, not hidden roadmap claims.
 
 ## Deliberate sandbox adaptations (not claimed as production topology)
 

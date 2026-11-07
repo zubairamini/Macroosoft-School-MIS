@@ -6,6 +6,7 @@ import {
   LayoutDashboard, GraduationCap, Users, BookOpen, ClipboardCheck,
   FileSpreadsheet, Wallet, Library, IdCard, Megaphone, BarChart3, Settings,
   ReceiptText, Coins, Landmark, BadgeDollarSign, Home, Printer,
+  ShieldAlert, TrendingUp, Building2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -54,9 +55,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     key: "attendance",
-    label: "حاضری",
+    label: "حاضری و انضباط",
     items: [
       { key: "attendance", label: "ثبت حاضری", icon: ClipboardCheck, route: "/attendance", permission: "attendance.view", implemented: true },
+      { key: "discipline", label: "انضباط و رفتار", icon: ShieldAlert, route: "/discipline", permission: "discipline.view", implemented: true, phaseNote: "مرحلهٔ ۷" },
     ],
   },
   {
@@ -118,6 +120,7 @@ export const NAV_GROUPS: NavGroup[] = [
     key: "reports",
     label: "گزارش‌ها",
     items: [
+      { key: "analytics", label: "تحلیل‌ها", icon: TrendingUp, route: "/analytics", permission: "analytics.view", implemented: true, phaseNote: "مرحلهٔ ۸" },
       { key: "reports", label: "گزارش‌ها", icon: BarChart3, route: "/reports", permission: "reports.view", implemented: true },
       { key: "id-cards", label: "کارت‌های شناسایی", icon: Printer, route: "/cards", permission: "students.view", implemented: true },
     ],
@@ -127,6 +130,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "تنظیمات",
     items: [
       { key: "settings", label: "تنظیمات مکتب", icon: Settings, route: "/settings", permission: "settings.view", implemented: true },
+      { key: "branches", label: "شعبه‌های مکتب", icon: Building2, route: "/settings/branches", permission: "academic.view", implemented: true, phaseNote: "مرحلهٔ ۶" },
       { key: "year-end", label: "سال‌گذرانی", icon: IdCard, route: "/settings/year-end", permission: "year_end.manage", implemented: true },
       { key: "audit", label: "ریکارود نظارتی", icon: BarChart3, route: "/settings/audit", permission: "audit.view", implemented: true },
     ],

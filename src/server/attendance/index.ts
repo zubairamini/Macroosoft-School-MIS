@@ -367,6 +367,46 @@ export async function reopenSession(ctx: AuthContext, sessionId: string, dto: z.
   });
 }
 
+// ── Delete (Phase 6: full CRUD on sessions) ─────────────────────────────────
+// Only OPEN (draft) sessions can be deleted — a submitted session is part of
+// the statistical record and must be reopened by a manager instead. Drafts
+// with saved marks are deleted together with their records, in one
+// transaction, always audit-logged with a before snapshot.
+
+export async function deleteSession(ctx: AuthContext, sessionId: string) {
+  const session = await db.attendanceSession.findUnique({
+    where: { id: sessionId },
+    include: { _count: { select: { records: true } } },
+  });
+  if (!session) throw errors.notFound("سیشن حاضری");
+  if (session.status !== "open") {
+    throw errors.badRequest(
+      "حاضری قطعی‌شده حذف نمی‌شود — آمار تاریخی است. برای تصحیح، از مسیر بازکردن مجدد استفاده کنید.",
+    );
+  }
+  await requireSectionAccess(ctx, session.classSectionId, "attendance.record");
+
+  return db.$transaction(async (tx) => {
+    await tx.attendanceRecord.deleteMany({ where: { sessionId } });
+    await tx.attendanceSession.delete({ where: { id: sessionId } });
+    await writeAudit(tx, {
+      actorId: ctx.user.id,
+      actorName: ctx.user.fullName,
+      action: "attendance.session-delete",
+      entity: "AttendanceSession",
+      entityId: sessionId,
+      before: {
+        classSectionId: session.classSectionId,
+        date: session.date,
+        period: session.period,
+        recordCount: session._count.records,
+      },
+      ip: ctx.ip,
+    });
+    return { ok: true };
+  });
+}
+
 // ── Summary (statistics) ────────────────────────────────────────────────────
 // Only SUBMITTED sessions count. Students enrolled in the section(s) without
 // a record row are counted as «نا-ثبت» (notRecorded) — never as present.

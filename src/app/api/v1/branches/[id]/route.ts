@@ -7,8 +7,9 @@ import type { AuthContext } from "@/server/auth/context";
 
 type P = { params: Promise<{ id: string }> };
 
+/** Edit / (de)activate a branch — org-level master data, admin / مدیر عام only. */
 export const PATCH = withApi<P & object>(
-  { permission: "academic.manage" },
+  { permission: "branches.manage" },
   async (req: NextRequest, ctx: P & { auth: AuthContext }) => {
     const { id } = await ctx.params;
     const dto = await parseBody(req, branchDto.partial());

@@ -36,7 +36,7 @@ rendered in the UI at `#/settings/roles`.
 | `own` | the signed-in student's own record | `User.guardianId` self-link |
 | `guardian` | explicitly linked children | `StudentGuardian` rows with `contactRights` |
 
-## Matrix (default roles) — 13 roles × 54 permissions
+## Matrix (default roles) — 13 roles × 58 permissions
 
 Legend: `A`=all · `B`=branch (needs branchId) · `S`=section · `G`=guardian · `O`=own · `Y`=year · — = not granted.
 
@@ -88,6 +88,10 @@ Legend: `A`=all · `B`=branch (needs branchId) · `S`=section · `G`=guardian ·
 | services.manage | A | A | B | — | — | — | — | — | — | — | — | — | — |
 | reports.view | A | A | B | B | B | B | — | B | — | — | — | — | B |
 | year_end.manage | A | A | — | — | — | — | — | — | — | — | — | — | — |
+| branches.manage | A | A | — | — | — | — | — | — | — | — | — | — | — |
+| discipline.view | A | A | B | B | — | — | — | S | — | — | — | — | B |
+| discipline.manage | A | A | B | B | — | — | — | S | — | — | — | — | — |
+| analytics.view | A | A | B | B | — | — | — | — | — | — | — | — | B |
 | settings.view | A | A | A | A | A | A | — | — | — | A | — | — | A |
 | settings.manage | A | — | — | — | — | — | — | — | — | — | — | — | — |
 | users.view | A | A | B | — | — | — | — | — | — | B | — | — | B |

@@ -211,6 +211,7 @@ async function main() {
     db.inventoryItem.deleteMany(),
     db.guestVisit.deleteMany(),
     db.schoolEvent.deleteMany(),
+    db.disciplineIncident.deleteMany(),
     db.promotionDecision.deleteMany(),
     // Phase 3 — finance (children before parents)
     db.payrollItem.deleteMany(),
@@ -1665,6 +1666,71 @@ async function main() {
       createdById: userRows.registrar.id,
     },
   });
+
+  // ── Discipline & behavior register (Phase 7) ────────────────────────────
+  // Fictional incidents + merits spread over the last three months, in BOTH
+  // branches, recorded by different roles. Some resolved with follow-up notes.
+  if (mainStudents.length >= 4 && secondStudents.length >= 2) {
+    await db.disciplineIncident.createMany({
+      data: [
+        {
+          orgId: org.id, branchId: mainBranch.id, studentId: mainStudents[0].student.id,
+          date: "2026-09-28", kind: "late", severity: "low",
+          description: "سه روز پیوسته با تأخیر به صنف آمد.",
+          actionTaken: "counseling", followUpNote: "با ولی تلفنی صحبت شد؛ قول بهبود داده شد.",
+          resolvedAt: new Date("2026-10-02T09:00:00Z"), recordedById: userRows.teacher.id,
+        },
+        {
+          orgId: org.id, branchId: mainBranch.id, studentId: mainStudents[1].student.id,
+          date: "2026-10-12", kind: "absent", severity: "medium",
+          description: "یک هفته بدون رخصت غایب بود.",
+          actionTaken: "parent_notified", followUpNote: "ولی به مکتب احضار شد.",
+          resolvedAt: new Date("2026-10-15T08:30:00Z"), recordedById: userRows.teacher.id,
+        },
+        {
+          orgId: org.id, branchId: mainBranch.id, studentId: mainStudents[2].student.id,
+          date: "2026-10-20", kind: "misconduct", severity: "high",
+          description: "در زمان استراحت با هم‌صنف خودش بحث و زد و خورد کرد.",
+          actionTaken: "warning", resolvedAt: null,
+          recordedById: userRows.manager.id,
+        },
+        {
+          orgId: org.id, branchId: mainBranch.id, studentId: mainStudents[3].student.id,
+          date: "2026-10-25", kind: "merit", severity: "low",
+          description: "تلفن گم‌شدهٔ هم‌صنف را به اداره تحویل داد.",
+          actionTaken: "none", resolvedAt: new Date("2026-10-25T10:00:00Z"),
+          recordedById: userRows.teacher.id,
+        },
+        {
+          orgId: org.id, branchId: mainBranch.id, studentId: mainStudents[1].student.id,
+          date: "2026-11-02", kind: "dress", severity: "low",
+          description: "بدون لباس مکتبی به صنف آمد.",
+          actionTaken: "none", resolvedAt: null, recordedById: userRows.teacher.id,
+        },
+        {
+          orgId: org.id, branchId: secondBranch.id, studentId: secondStudents[0].student.id,
+          date: "2026-10-08", kind: "damage", severity: "medium",
+          description: "شیشهٔ پنجرهٔ صنف را در بازی فوتبال شکاند.",
+          actionTaken: "parent_notified", followUpNote: "ولی هزینهٔ شیشه را پرداخت کرد.",
+          resolvedAt: new Date("2026-10-11T07:45:00Z"), recordedById: userRows.teacher2.id,
+        },
+        {
+          orgId: org.id, branchId: secondBranch.id, studentId: secondStudents[1].student.id,
+          date: "2026-11-01", kind: "merit", severity: "low",
+          description: "در مسابقهٔ خطابهٔ مکتب مقام اول را کسب کرد.",
+          actionTaken: "none", resolvedAt: new Date("2026-11-01T13:00:00Z"),
+          recordedById: userRows.manager2.id,
+        },
+        {
+          orgId: org.id, branchId: secondBranch.id, studentId: secondStudents[0].student.id,
+          date: "2026-11-03", kind: "fight", severity: "high",
+          description: "در حیاط مکتب با شاگرد صنف دیگر زد و خورد کرد.",
+          actionTaken: "suspension", followUpNote: "سه روز از مکتب محروم شد.",
+          resolvedAt: null, recordedById: userRows.manager2.id,
+        },
+      ],
+    });
+  }
 
   // ── Event calendar ──────────────────────────────────────────────────────
   await db.schoolEvent.createMany({

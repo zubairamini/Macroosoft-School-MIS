@@ -1,4 +1,4 @@
-# Test Results — actual runs (Phases 4&5: 2026-11-07; Phase 3: 2026-11-07; Phase 2: 2026-11-07; Phase 1: 2026-11-06)
+# Test Results — actual runs (Phases 6–8: 2026-11-08; Phases 4&5: 2026-11-07; Phase 3: 2026-11-07; Phase 2: 2026-11-07; Phase 1: 2026-11-06)
 
 All commands were executed against the live sandbox environment; outputs
 below are the real results, not claims.
@@ -299,10 +299,96 @@ New sections in this run:
 
 ```bash
 bun run typecheck
-bun run test            # 99 unit tests
-bun run test:e2e        # 200 API checks (requires dev server on :3000)
+bun run test            # 99 unit tests (phases 1–5; now 134 overall)
+bun run test:e2e        # 200 API checks (phases 1–5; now 232 overall)
 bun run db:seed         # restore the clean demo state afterwards
 ```
 
 `tests/e2e_api.py` mutates the demo database (closes year ۱۴۰۵, creates
 ۱۴۰۶, test loans/routes/items/guests) — the DB was re-seeded after this run.
+
+## 9. Phases 6–8 — master-data CRUD, discipline & analytics (2026-11-08)
+
+Implemented in this session: **مرحلهٔ ششم** — branch master-data CRUD with a
+management screen (stats, create/edit/deactivate; `branches.manage` held only
+by admin / مدیر عام), full-CRUD completion for attendance (open drafts are
+deletable with their marks; submitted history is immutable), and the compact
+role+branch+sections user-assignment form (including change-role for existing
+users); **مرحلهٔ هفتم** — the discipline & behavior register (incidents +
+merits, severity/actions, follow-up & resolution trail, full CRUD with audit,
+teacher = own sections, manager = own branch); **مرحلهٔ هشتم** — analytics
+overview (KPIs, six Solar-Hijri-month trends, at-risk students with three
+independent flags: attendance < 80% (≥ 5 recorded days), published-grade
+average < 40%, overdue invoice balance).
+
+### 9.1 Type safety & lint
+
+```
+$ bun run typecheck        # tsc --noEmit
+(no output — clean)
+
+$ bun run lint             # eslint .
+(no output — clean)
+```
+
+### 9.2 Unit tests (`bun test`)
+
+```
+$ bun test tests/
+ 134 pass
+ 0 fail
+ 1812 expect() calls
+Ran 134 tests across 9 files.
+```
+
+New suites:
+
+| Suite | Key verified behaviors |
+|---|---|
+| `tests/phase6.test.ts` | branch DTO validation (name/code bounds, phone normalization, isActive default); **`branches.manage` held ONLY by admin & مدیر عام** (managers keep academic.manage but not branch CRUD); user-assignment DTO carries branchId + sectionIds |
+| `tests/phase7.test.ts` | incident DTO (kinds/severities/actions closed sets, description ≥ 3, **ISO and Solar-Hijri dates**, resolve-only updates); **RBAC: teacher = section scope, manager/academic = branch, admin/GM = all, cashier/finance/librarian/HR/student/parent = none, auditor read-only** |
+| `tests/phase8.test.ts` | **at-risk classification policy** (healthy = 0 flags; attendance < 80% flags only with ≥ 5 recorded days; average < 40% flags; overdue-balance flag; all three → score 3; **no grades yet → null, never zero**); **Solar-Hijri month buckets** (6 ordered contiguous inclusive buckets, Persian-digit Afghan labels, year rollover at جدی); analytics RBAC (admin/GM all; manager/academic/auditor branch; teacher/cashier none) |
+
+### 9.3 End-to-end API integration
+
+```
+RESULT: 232 passed, 0 failed
+```
+
+New sections in this run:
+
+| Section | Key verified behaviors |
+|---|---|
+| [18] Branch master data & attendance drafts | admin listing with stats; **manager sees only own branch**; **manager cannot create branches (403)**; duplicate code 409; create → edit → deactivate → list reflects; **draft session delete → 404 afterwards**; **submitted session delete refused (400)** |
+| [19] Discipline register | admin listing (seeded 8 rows); kind & resolved filters; cashier 403 both verbs; **teacher records for own-section student (200)**; **teacher 403 on another branch's student**; **manager2 sees only own-branch incidents**; resolve with follow-up; delete + gone from list; manager2 records own-branch incident |
+| [20] Analytics overview | admin 200 with KPIs + 6-month trends + flagged at-risk rows; **teacher 403; cashier 403**; **manager2's at-risk rows stay inside own branch** |
+
+### 9.4 Browser verification (agent-browser)
+
+Logged in as admin and as teacher against the live dev server:
+
+- `#/settings/branches` — table renders both branches with section/student
+  counts and Dari headers (نام شعبه | کد | ولایت / ناحیه | تماس | شعبه‌های
+  صنف | شاگردان فعال | وضعیت | عملیات).
+- `#/settings/users` → «کاربر جدید» — the dialog now uses a compact
+  `grid gap-3 sm:grid-cols-2` form with نقش + شعبهٔ مکتب selects and the
+  teacher section checkboxes (DOM-verified).
+- `#/attendance` (teacher, ۴-الف, ۱۴۰۵/۰۸/۱۵) — the open draft shows the
+  «حذف پیش‌نویس» button; clicking it opens the destructive confirm dialog
+  (audit warning included). Admin deliberately sees no delete button
+  (no `attendance.record` grant).
+- `#/discipline` — register renders seeded incidents/merits with badges,
+  4 filter controls, resolve/delete actions.
+- `#/analytics` — 3 recharts surfaces render (24 bar rectangles, 18 axis
+  ticks, 1 line), KPI cards and the at-risk table with flag badges.
+- No page errors and no console errors on any of the visited screens.
+
+### 9.5 Reproduction
+
+```bash
+bun run typecheck
+bun run test            # 134 unit tests
+bun run test:e2e        # 232 API checks (requires dev server on :3000)
+bun run db:seed         # restore the clean demo state afterwards
+```
+

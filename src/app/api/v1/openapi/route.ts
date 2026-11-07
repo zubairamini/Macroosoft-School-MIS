@@ -70,6 +70,8 @@ const spec = {
     { name: "services", description: "ترانسپورت، انبار، مهمان‌ها و رویدادها (مرحلهٔ پنجم)" },
     { name: "reports", description: "ثبت‌نامه‌ها و گزارش‌های چاپی/CSV (مرحلهٔ پنجم)" },
     { name: "rollover", description: "سال‌گذرانی تکرار-امن (مرحلهٔ پنجم)" },
+    { name: "discipline", description: "ریکارد انضباط و رفتار شاگردان (مرحلهٔ هفتم)" },
+    { name: "analytics", description: "تحلیل‌ها و شاگردان در معرض خطر (مرحلهٔ هشتم)" },
     { name: "applications", description: "درخواست‌های شمولیت و چرخهٔ تصمیم" },
     { name: "students", description: "شاگردان، پروفایل و چرخهٔ حیات" },
     { name: "guardians", description: "اولیا" },
@@ -241,10 +243,6 @@ const spec = {
     },
     "/org/setup": {
       post: { tags: ["org"], summary: "تنظیم اولیهٔ مکتب (فقط بار اول)", responses: { 200: okJson("Me"), 400: errorResponse("از قبل تنظیم شده") } },
-    },
-    "/branches": {
-      get: { tags: ["academic"], summary: "شعبه‌های مکتب", responses: { 200: okJson("Me") } },
-      post: { tags: ["academic"], summary: "ایجاد شعبهٔ مکتب (academic.manage)", responses: { 200: okJson("Me"), 409: errorResponse("کد تکراری") } },
     },
     "/academic-years": {
       get: { tags: ["academic"], summary: "سال‌های تعلیمی", responses: { 200: okJson("Me") } },
@@ -422,10 +420,6 @@ const spec = {
         summary: "باز کردن سیشن (attendance.record) — idempotent؛ قطعی‌شده رد می‌شود",
         responses: { 200: okJson("Student"), 409: errorResponse("حاضری این روز قطعی شده — مسیر تصحیح") },
       },
-    },
-    "/attendance/sessions/{id}": {
-      get: { tags: ["attendance"], summary: "روستر حاضری با ریکارود فعلی", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 403: errorResponse("خارج از حیطهٔ اجازه") } },
-      put: { tags: ["attendance"], summary: "ذخیرهٔ علائم روستر (فقط سیشن باز؛ کنترل نسخه)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 400: errorResponse("قطعی‌شده قابل ویرایش نیست"), 409: errorResponse("تعارض نسخه") } },
     },
     "/attendance/sessions/{id}/submit": {
       post: { tags: ["attendance"], summary: "قطعی کردن حاضری — از این پس در آمار محاسبه می‌شود", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 409: errorResponse("تعارض نسخه") } },
@@ -779,6 +773,41 @@ const spec = {
     },
     "/services/events/{id}": {
       patch: { tags: ["services"], summary: "ویرایش رویداد", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student") } },
+    },
+    "/branches": {
+      get: { tags: ["academic"], summary: "داده‌های پایهٔ شعبه‌های مکتب با آمار (academic.view) — مرحلهٔ ۶", responses: { 200: okList("Student") } },
+      post: { tags: ["academic"], summary: "ایجاد شعبهٔ مکتب (branches.manage — فقط مدیر سیستم/مدیر عام) — مرحلهٔ ۶", responses: { 200: okJson("Student"), 409: errorResponse("کد شعبه تکراری") } },
+    },
+    "/branches/{id}": {
+      patch: { tags: ["academic"], summary: "ویرایش / فعال‌سازی / غیرفعال‌سازی شعبهٔ مکتب (branches.manage) — مرحلهٔ ۶", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 404: errorResponse("پیدا نشد") } },
+    },
+    "/attendance/sessions/{id}": {
+      get: { tags: ["attendance"], summary: "روستر حاضری با ریکارود فعلی", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 403: errorResponse("خارج از حیطهٔ اجازه") } },
+      put: { tags: ["attendance"], summary: "ذخیرهٔ علائم روستر (فقط سیشن باز؛ کنترل نسخه)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 400: errorResponse("قطعی‌شده قابل ویرایش نیست"), 409: errorResponse("تعارض نسخه") } },
+      delete: { tags: ["attendance"], summary: "حذف پیش‌نویس سیشن باز با علائمش — قطعی‌شده حذف نمی‌شود (attendance.record) — مرحلهٔ ۶", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 400: errorResponse("قطعی‌شده حذف نمی‌شود") } },
+    },
+    "/discipline": {
+      get: {
+        tags: ["discipline"],
+        summary: "ریکارد انضباط و اقدامات مثبت (discipline.view) — مرحلهٔ ۷",
+        parameters: [
+          { name: "studentId", in: "query", schema: { type: "string" } },
+          { name: "kind", in: "query", schema: { type: "string", enum: ["late", "absent", "misconduct", "damage", "fight", "dress", "other", "merit"] } },
+          { name: "severity", in: "query", schema: { type: "string", enum: ["low", "medium", "high"] } },
+          { name: "resolved", in: "query", schema: { type: "string", enum: ["true", "false"] } },
+          { name: "from", in: "query", schema: { type: "string", format: "date" } },
+          { name: "to", in: "query", schema: { type: "string", format: "date" } },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: { tags: ["discipline"], summary: "ثبت ریکارد انضباط/اقدام مثبت (discipline.manage) — استاد فقط برای شاگردان شعبه‌های تخصیص‌یافته", responses: { 200: okJson("Student"), 403: errorResponse("خارج از حیطهٔ اجازه") } },
+    },
+    "/discipline/{id}": {
+      patch: { tags: ["discipline"], summary: "ویرایش / پیگیری / حل‌کردن ریکارد (discipline.manage)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 404: errorResponse("پیدا نشد") } },
+      delete: { tags: ["discipline"], summary: "حذف ریکارد با ثبت کامل در ریکارود نظارتی (discipline.manage)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 403: errorResponse("خارج از حیطهٔ اجازه") } },
+    },
+    "/analytics/overview": {
+      get: { tags: ["analytics"], summary: "KPIها، روند شش‌ماههٔ شمسی و شاگردان در معرض خطر (analytics.view) — مرحلهٔ ۸", responses: { 200: okJson("Student"), 403: errorResponse("اجازه ندارید") } },
     },
     "/reports/{kind}": {
       get: {

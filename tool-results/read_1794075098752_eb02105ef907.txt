@@ -1,0 +1,777 @@
+     1→// Settings: org profile, users & roles, permission matrix, academic years,
+     2→// sections, subjects, module toggles, audit trail, roadmap.
+     3→
+     4→"use client";
+     5→
+     6→import { useState } from "react";
+     7→import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+     8→import { Button } from "@/components/ui/button";
+     9→import { Input } from "@/components/ui/input";
+    10→import { Label } from "@/components/ui/label";
+    11→import { Badge } from "@/components/ui/badge";
+    12→import { Switch } from "@/components/ui/switch";
+    13→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    14→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+    15→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+    16→import {
+    17→  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+    18→} from "@/components/ui/dialog";
+    19→import { toast } from "sonner";
+    20→import {
+    21→  School, Users, ShieldCheck, CalendarRange, LayoutGrid, BookOpen, History,
+    22→  Loader2, Plus, KeyRound, CheckCircle2, XCircle, Info,
+    23→} from "lucide-react";
+    24→import {
+    25→  useOrgContext, useUpdateOrg, useUsers, useCreateUser, useUpdateUser,
+    26→  useAcademicYears, useCreateYear, useSetCurrentYear, useSections, useCreateSection,
+    27→  useSubjects, useCreateSubject, useSettings, useUpdateSettings, useGrades,
+    28→  useAuditEvents, useMe, apiErrorMessage,
+    29→} from "@/lib/api/hooks";
+    30→import { Ltr, TableSkeleton, Pager, JalaliDateInput, StatusBadge } from "@/components/shared";
+    31→import { faNum, formatJalali, formatInstantJalaliDateTime } from "@/lib/format";
+    32→import { navigate } from "@/app-shell/router";
+    33→import { hasGrant } from "@/app-shell/shell";
+    34→import { ROLE_MATRIX, ROLE_LABELS_DARI, PERMISSIONS } from "@/server/rbac/permissions";
+    35→
+    36→// ── Org profile tab ─────────────────────────────────────────────────────────
+    37→
+    38→function OrgProfileTab() {
+    39→  const { data: orgCtx } = useOrgContext();
+    40→  const update = useUpdateOrg();
+    41→  const [form, setForm] = useState<Record<string, string> | null>(null);
+    42→
+    43→  if (!orgCtx?.org) return <p className="text-sm text-muted-foreground">پروفایل مکتب هنوز تنظیم نشده است.</p>;
+    44→  const org = orgCtx.org;
+    45→  const f = form ?? {
+    46→    name: org.name, productName: org.productName, province: org.province ?? "",
+    47→    district: org.district ?? "", address: org.address ?? "", phone: org.phone ?? "",
+    48→    email: org.email ?? "", emisCode: org.emisCode ?? "", registrationNumber: org.registrationNumber ?? "",
+    49→  };
+    50→
+    51→  async function onSave() {
+    52→    try {
+    53→      await update.mutateAsync({
+    54→        name: f.name, productName: f.productName,
+    55→        schoolType: org.schoolType as "public" | "private",
+    56→        province: f.province || null, district: f.district || null,
+    57→        address: f.address || null, phone: f.phone || null, email: f.email || null,
+    58→        emisCode: f.emisCode || null, registrationNumber: f.registrationNumber || null,
+    59→        version: org.version,
+    60→      });
+    61→      toast.success("پروفایل مکتب ذخیره شد.");
+    62→      setForm(null);
+    63→    } catch (err) {
+    64→      toast.error(apiErrorMessage(err));
+    65→    }
+    66→  }
+    67→
+    68→  return (
+    69→    <Card>
+    70→      <CardHeader>
+    71→        <CardTitle className="flex items-center gap-2 text-base"><School className="h-5 w-5 text-primary" /> پروفایل مکتب</CardTitle>
+    72→        <CardDescription>
+    73→          نام مکتب، لوگو و سربرگ گزارش‌ها قابل تنظیم است — این سیستم مستقل است و
+    74→          وابسته به هیچ سیستم رسمی نیست.
+    75→        </CardDescription>
+    76→      </CardHeader>
+    77→      <CardContent className="space-y-4">
+    78→        <div className="grid gap-4 sm:grid-cols-2">
+    79→          <Field label="نام مکتب"><Input value={f.name} onChange={(e) => setForm({ ...f, name: e.target.value })} /></Field>
+    80→          <Field label="نام محصول"><Input value={f.productName} onChange={(e) => setForm({ ...f, productName: e.target.value })} /></Field>
+    81→          <Field label="نوعیت">
+    82→            <Input value={org.schoolType === "private" ? "خصوصی" : "دولتی"} disabled />
+    83→          </Field>
+    84→          <Field label="ولایت"><Input value={f.province} onChange={(e) => setForm({ ...f, province: e.target.value })} /></Field>
+    85→          <Field label="ناحیه/ولسوالی"><Input value={f.district} onChange={(e) => setForm({ ...f, district: e.target.value })} /></Field>
+    86→          <Field label="شمارهٔ تماس"><Input dir="ltr" className="text-start" value={f.phone} onChange={(e) => setForm({ ...f, phone: e.target.value })} /></Field>
+    87→          <Field label="ایمیل (اختیاری)"><Input dir="ltr" className="text-start" value={f.email} onChange={(e) => setForm({ ...f, email: e.target.value })} /></Field>
+    88→          <Field label="کد EMIS (اختیاری)"><Input dir="ltr" className="text-start" value={f.emisCode} onChange={(e) => setForm({ ...f, emisCode: e.target.value })} /></Field>
+    89→          <Field label="شمارهٔ ثبت (اختیاری)"><Input dir="ltr" className="text-start" value={f.registrationNumber} onChange={(e) => setForm({ ...f, registrationNumber: e.target.value })} /></Field>
+    90→          <Field label="نشانی"><Input value={f.address} onChange={(e) => setForm({ ...f, address: e.target.value })} /></Field>
+    91→        </div>
+    92→        <div className="flex items-center gap-2">
+    93→          <Button onClick={onSave} disabled={update.isPending || form === null}>
+    94→            {update.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ذخیرهٔ تغییرات
+    95→          </Button>
+    96→          {form ? <Button variant="ghost" onClick={() => setForm(null)}>واگردانی</Button> : null}
+    97→        </div>
+    98→      </CardContent>
+    99→    </Card>
+   100→  );
+   101→}
+   102→
+   103→// ── Users tab ───────────────────────────────────────────────────────────────
+   104→
+   105→const ROLE_OPTIONS = Object.entries(ROLE_LABELS_DARI);
+   106→
+   107→function UsersTab() {
+   108→  const { data: users } = useUsers();
+   109→  const create = useCreateUser();
+   110→  const update = useUpdateUser();
+   111→  const [createOpen, setCreateOpen] = useState(false);
+   112→  const [resetFor, setResetFor] = useState<{ id: string; name: string } | null>(null);
+   113→  const [newPassword, setNewPassword] = useState("");
+   114→  const [form, setForm] = useState({
+   115→    username: "", fullName: "", password: "", roleKey: "teacher", phone: "",
+   116→  });
+   117→
+   118→  async function onCreate() {
+   119→    try {
+   120→      await create.mutateAsync({
+   121→        username: form.username.trim(),
+   122→        fullName: form.fullName.trim(),
+   123→        password: form.password,
+   124→        roleKey: form.roleKey,
+   125→        phone: form.phone.trim() || null,
+   126→      });
+   127→      toast.success("کاربر ایجاد شد. کاربر باید در اولین ورود رمز خود را تغییر دهد.");
+   128→      setCreateOpen(false);
+   129→      setForm({ username: "", fullName: "", password: "", roleKey: "teacher", phone: "" });
+   130→    } catch (err) {
+   131→      toast.error(apiErrorMessage(err));
+   132→    }
+   133→  }
+   134→
+   135→  async function onReset() {
+   136→    if (!resetFor || newPassword.length < 8) return;
+   137→    try {
+   138→      await update.mutateAsync({ id: resetFor.id, body: { action: "reset-password", password: newPassword } });
+   139→      toast.success("رمز بازنشانی شد و نشست‌های کاربر بسته شد.");
+   140→      setResetFor(null);
+   141→      setNewPassword("");
+   142→    } catch (err) {
+   143→      toast.error(apiErrorMessage(err));
+   144→    }
+   145→  }
+   146→
+   147→  async function onToggleActive(u: { id: string; isActive: boolean; fullName: string }) {
+   148→    try {
+   149→      await update.mutateAsync({ id: u.id, body: { action: u.isActive ? "deactivate" : "activate" } });
+   150→      toast.success(u.isActive ? "کاربر غیرفعال شد." : "کاربر فعال شد.");
+   151→    } catch (err) {
+   152→      toast.error(apiErrorMessage(err));
+   153→    }
+   154→  }
+   155→
+   156→  return (
+   157→    <Card>
+   158→      <CardHeader>
+   159→        <div className="flex flex-wrap items-center justify-between gap-2">
+   160→          <div>
+   161→            <CardTitle className="flex items-center gap-2 text-base"><Users className="h-5 w-5 text-primary" /> کاربران</CardTitle>
+   162→            <CardDescription>حساب‌های کاربری با نقش‌ها و حیطه‌های دسترسی</CardDescription>
+   163→          </div>
+   164→          <Button size="sm" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4" /> کاربر جدید</Button>
+   165→        </div>
+   166→      </CardHeader>
+   167→      <CardContent>
+   168→        {!users ? (
+   169→          <TableSkeleton />
+   170→        ) : (
+   171→          <div className="overflow-x-auto">
+   172→            <Table>
+   173→              <TableHeader>
+   174→                <TableRow>
+   175→                  <TableHead className="text-start">نام</TableHead>
+   176→                  <TableHead className="text-start">نام کاربری</TableHead>
+   177→                  <TableHead className="text-start">نقش‌ها</TableHead>
+   178→                  <TableHead className="text-start">آخرین ورود</TableHead>
+   179→                  <TableHead className="text-start">وضعیت</TableHead>
+   180→                  <TableHead className="text-start w-40">عملیات</TableHead>
+   181→                </TableRow>
+   182→              </TableHeader>
+   183→              <TableBody>
+   184→                {users.map((u) => (
+   185→                  <TableRow key={u.id}>
+   186→                    <TableCell className="font-medium">{u.fullName}</TableCell>
+   187→                    <TableCell dir="ltr" className="font-mono text-xs">{u.username}</TableCell>
+   188→                    <TableCell>
+   189→                      <div className="flex flex-wrap gap-1">
+   190→                        {u.roles.map((r, i) => (
+   191→                          <Badge key={i} variant="secondary">{ROLE_LABELS_DARI[r.roleKey as keyof typeof ROLE_LABELS_DARI] ?? r.roleKey}</Badge>
+   192→                        ))}
+   193→                      </div>
+   194→                    </TableCell>
+   195→                    <TableCell className="text-xs text-muted-foreground">
+   196→                      {u.lastLoginAt ? formatInstantJalaliDateTime(u.lastLoginAt) : "—"}
+   197→                    </TableCell>
+   198→                    <TableCell>
+   199→                      {u.isActive ? (
+   200→                        <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">فعال</Badge>
+   201→                      ) : (
+   202→                        <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700">غیرفعال</Badge>
+   203→                      )}
+   204→                    </TableCell>
+   205→                    <TableCell>
+   206→                      <div className="flex gap-1">
+   207→                        <Button size="sm" variant="ghost" onClick={() => setResetFor({ id: u.id, name: u.fullName })}>
+   208→                          <KeyRound className="h-3.5 w-3.5" />
+   209→                        </Button>
+   210→                        <Button size="sm" variant="ghost" onClick={() => onToggleActive(u)}>
+   211→                          {u.isActive ? <XCircle className="h-3.5 w-3.5 text-destructive" /> : <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />}
+   212→                        </Button>
+   213→                      </div>
+   214→                    </TableCell>
+   215→                  </TableRow>
+   216→                ))}
+   217→              </TableBody>
+   218→            </Table>
+   219→          </div>
+   220→        )}
+   221→      </CardContent>
+   222→
+   223→      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+   224→        <DialogContent dir="rtl">
+   225→          <DialogHeader>
+   226→            <DialogTitle>کاربر جدید</DialogTitle>
+   227→            <DialogDescription>نقش را مطابق وظایف کاربر انتخاب کنید — اجازه‌ها در سرور اعمال می‌شود.</DialogDescription>
+   228→          </DialogHeader>
+   229→          <div className="grid gap-3">
+   230→            <Field label="نام کامل *"><Input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></Field>
+   231→            <Field label="نام کاربری * (لاتین)" hint="مثلاً: ahmad.teacher">
+   232→              <Input dir="ltr" className="text-start" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+   233→            </Field>
+   234→            <Field label="رمز اولیه *" hint="حداقل ۸ حرف با عدد — کاربر باید بعداً آن را تغییر دهد">
+   235→              <Input dir="ltr" className="text-start" type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+   236→            </Field>
+   237→            <Field label="نقش *">
+   238→              <Select value={form.roleKey} onValueChange={(v) => setForm({ ...form, roleKey: v })}>
+   239→                <SelectTrigger><SelectValue /></SelectTrigger>
+   240→                <SelectContent className="max-h-64">
+   241→                  {ROLE_OPTIONS.map(([key, label]) => (
+   242→                    <SelectItem key={key} value={key}>{label}</SelectItem>
+   243→                  ))}
+   244→                </SelectContent>
+   245→              </Select>
+   246→            </Field>
+   247→            <Field label="شمارهٔ تماس"><Input dir="ltr" className="text-start" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+93 …" /></Field>
+   248→          </div>
+   249→          <DialogFooter>
+   250→            <Button variant="outline" onClick={() => setCreateOpen(false)}>لغو</Button>
+   251→            <Button onClick={onCreate} disabled={create.isPending || form.username.length < 3 || form.password.length < 8 || form.fullName.length < 3}>
+   252→              {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ایجاد کاربر
+   253→            </Button>
+   254→          </DialogFooter>
+   255→        </DialogContent>
+   256→      </Dialog>
+   257→
+   258→      <Dialog open={resetFor !== null} onOpenChange={(o) => { if (!o) { setResetFor(null); setNewPassword(""); } }}>
+   259→        <DialogContent dir="rtl">
+   260→          <DialogHeader>
+   261→            <DialogTitle>بازنشانی رمز — {resetFor?.name}</DialogTitle>
+   262→            <DialogDescription>همهٔ نشست‌های فعال این کاربر بسته می‌شود. عملیات در ریکارود نظارتی ثبت می‌گردد.</DialogDescription>
+   263→          </DialogHeader>
+   264→          <Field label="رمز جدید (حداقل ۸ حرف با عدد)">
+   265→            <Input dir="ltr" className="text-start" type="text" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+   266→          </Field>
+   267→          <DialogFooter>
+   268→            <Button variant="outline" onClick={() => { setResetFor(null); setNewPassword(""); }}>لغو</Button>
+   269→            <Button onClick={onReset} disabled={newPassword.length < 8 || update.isPending}>بازنشانی</Button>
+   270→          </DialogFooter>
+   271→        </DialogContent>
+   272→      </Dialog>
+   273→    </Card>
+   274→  );
+   275→}
+   276→
+   277→// ── Permission matrix tab ───────────────────────────────────────────────────
+   278→
+   279→const SCOPE_LABELS: Record<string, string> = {
+   280→  all: "همهٔ مکتب",
+   281→  branch: "شعبهٔ مکتب",
+   282→  year: "سال تعلیمی",
+   283→  section: "شعبه‌های تخصیص‌یافته",
+   284→  own: "رکورد خود",
+   285→  guardian: "فرزندان پیوند‌شده",
+   286→};
+   287→
+   288→function RolesTab() {
+   289→  const roles = Object.keys(ROLE_MATRIX) as Array<keyof typeof ROLE_MATRIX>;
+   290→  return (
+   291→    <Card>
+   292→      <CardHeader>
+   293→        <CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-5 w-5 text-primary" /> نقش‌ها و اجازه‌ها</CardTitle>
+   294→        <CardDescription>
+   295→          ماتریس اجازه‌های پیش‌فرض. پنهان‌کردن منو جایگزین اجازه نیست — هر نقطهٔ API
+   296→          همین ماتریس را در سرور اعمال می‌کند.
+   297→        </CardDescription>
+   298→      </CardHeader>
+   299→      <CardContent className="overflow-x-auto">
+   300→        <Table>
+   301→          <TableHeader>
+   302→            <TableRow>
+   303→              <TableHead className="text-start">اجازه</TableHead>
+   304→              {roles.map((r) => (
+   305→                <TableHead key={r} className="text-center text-xs">{ROLE_LABELS_DARI[r]}</TableHead>
+   306→              ))}
+   307→            </TableRow>
+   308→          </TableHeader>
+   309→          <TableBody>
+   310→            {PERMISSIONS.map((p) => (
+   311→              <TableRow key={p}>
+   312→                <TableCell className="font-mono text-xs" dir="ltr">{p}</TableCell>
+   313→                {roles.map((r) => {
+   314→                  const grant = ROLE_MATRIX[r].find((g) => g.permission === p);
+   315→                  return (
+   316→                    <TableCell key={r} className="text-center">
+   317→                      {grant ? (
+   318→                        <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700" title={SCOPE_LABELS[grant.scope]}>
+   319→                          {SCOPE_LABELS[grant.scope]}
+   320→                        </Badge>
+   321→                      ) : (
+   322→                        <span className="text-muted-foreground/40">—</span>
+   323→                      )}
+   324→                    </TableCell>
+   325→                  );
+   326→                })}
+   327→              </TableRow>
+   328→            ))}
+   329→          </TableBody>
+   330→        </Table>
+   331→        <p className="mt-3 text-xs leading-6 text-muted-foreground">
+   332→          <Info className="inline h-3.5 w-3.5" /> حیطه‌ها با تخصیص نقش به هر کاربر محدودتر
+   333→          می‌شوند (شعبهٔ مشخص، سال مشخص، شعبه‌های صنف مشخص). مثلاً استاد فقط شاگردان
+   334→          شعبه‌های تخصیص‌یافتهٔ خود را می‌بیند و ولی فقط فرزندان پیوند‌شدهٔ خود را.
+   335→        </p>
+   336→      </CardContent>
+   337→    </Card>
+   338→  );
+   339→}
+   340→
+   341→// ── Academic years tab ──────────────────────────────────────────────────────
+   342→
+   343→function YearsTab() {
+   344→  const { data: years } = useAcademicYears();
+   345→  const create = useCreateYear();
+   346→  const setCurrent = useSetCurrentYear();
+   347→  const [form, setForm] = useState({ name: "", start: "", end: "" });
+   348→  const [open, setOpen] = useState(false);
+   349→
+   350→  return (
+   351→    <Card>
+   352→      <CardHeader>
+   353→        <div className="flex flex-wrap items-center justify-between gap-2">
+   354→          <div>
+   355→            <CardTitle className="flex items-center gap-2 text-base"><CalendarRange className="h-5 w-5 text-primary" /> سال‌های تعلیمی</CardTitle>
+   356→            <CardDescription>مرزهای سال تعلیمی قابل تنظیم است — با تقویم شمسی</CardDescription>
+   357→          </div>
+   358→          <Button size="sm" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> سال جدید</Button>
+   359→        </div>
+   360→      </CardHeader>
+   361→      <CardContent>
+   362→        {!years ? <TableSkeleton rows={3} cols={4} /> : (
+   363→          <ul className="space-y-2">
+   364→            {years.map((y) => (
+   365→              <li key={y.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border p-3">
+   366→                <div>
+   367→                  <p className="font-semibold">
+   368→                    سال {y.name} {y.isCurrent ? <Badge className="ms-1">جاری</Badge> : null}
+   369→                  </p>
+   370→                  <p className="text-xs text-muted-foreground">
+   371→                    {formatJalali(y.startDate)} تا {formatJalali(y.endDate)}
+   372→                  </p>
+   373→                </div>
+   374→                <div className="flex items-center gap-2">
+   375→                  <StatusBadge status={y.status} label={y.status === "active" ? "فعال" : y.status === "planned" ? "پلان‌شده" : "بسته"} />
+   376→                  {!y.isCurrent && y.status !== "closed" ? (
+   377→                    <Button size="sm" variant="outline" onClick={() => setCurrent.mutate(y.id)} disabled={setCurrent.isPending}>
+   378→                      فعال کردن
+   379→                    </Button>
+   380→                  ) : null}
+   381→                </div>
+   382→              </li>
+   383→            ))}
+   384→          </ul>
+   385→        )}
+   386→      </CardContent>
+   387→
+   388→      <Dialog open={open} onOpenChange={setOpen}>
+   389→        <DialogContent dir="rtl">
+   390→          <DialogHeader><DialogTitle>سال تعلیمی جدید</DialogTitle></DialogHeader>
+   391→          <div className="grid gap-3">
+   392→            <Field label="نام سال * (شمسی)"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="۱۴۰۶" /></Field>
+   393→            <Field label="تاریخ آغاز *"><JalaliDateInput value={form.start} onChange={(v) => setForm({ ...form, start: v })} placeholder="۱۴۰۶/۰۱/۰۱" /></Field>
+   394→            <Field label="تاریخ ختم *"><JalaliDateInput value={form.end} onChange={(v) => setForm({ ...form, end: v })} placeholder="۱۴۰۷/۰۱/۰۱" /></Field>
+   395→          </div>
+   396→          <DialogFooter>
+   397→            <Button variant="outline" onClick={() => setOpen(false)}>لغو</Button>
+   398→            <Button
+   399→              disabled={create.isPending || form.name.length < 2 || form.start.length !== 10 || form.end.length !== 10}
+   400→              onClick={async () => {
+   401→                try {
+   402→                  await create.mutateAsync({ name: form.name, startDate: form.start, endDate: form.end, isCurrent: false });
+   403→                  toast.success("سال تعلیمی ایجاد شد.");
+   404→                  setOpen(false);
+   405→                  setForm({ name: "", start: "", end: "" });
+   406→                } catch (err) {
+   407→                  toast.error(apiErrorMessage(err));
+   408→                }
+   409→              }}
+   410→            >
+   411→              {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ایجاد
+   412→            </Button>
+   413→          </DialogFooter>
+   414→        </DialogContent>
+   415→      </Dialog>
+   416→    </Card>
+   417→  );
+   418→}
+   419→
+   420→// ── Sections tab ────────────────────────────────────────────────────────────
+   421→
+   422→function SectionsTab() {
+   423→  const { data: orgCtx } = useOrgContext();
+   424→  const { data: sections } = useSections({ academicYearId: orgCtx?.currentYear?.id });
+   425→  const { data: grades } = useGrades();
+   426→  const create = useCreateSection();
+   427→  const [form, setForm] = useState({ gradeLevelId: "", label: "", capacity: "30", roomName: "", branchId: "", shiftId: "" });
+   428→  const [open, setOpen] = useState(false);
+   429→
+   430→  const byGrade = new Map<string, NonNullable<typeof sections>>();
+   431→  (sections ?? []).forEach((s) => {
+   432→    const key = s.gradeLevel.nameDari;
+   433→    byGrade.set(key, [...(byGrade.get(key) ?? []), s]);
+   434→  });
+   435→
+   436→  return (
+   437→    <Card>
+   438→      <CardHeader>
+   439→        <div className="flex flex-wrap items-center justify-between gap-2">
+   440→          <div>
+   441→            <CardTitle className="flex items-center gap-2 text-base"><LayoutGrid className="h-5 w-5 text-primary" /> شعبه‌های صنف</CardTitle>
+   442→            <CardDescription>
+   443→              «شعبهٔ صنف» (الف، ب…) داخل هر صنف — با «شعبهٔ مکتب» (کمپس) فرق دارد.
+   444→            </CardDescription>
+   445→          </div>
+   446→          <Button size="sm" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> شعبهٔ جدید</Button>
+   447→        </div>
+   448→      </CardHeader>
+   449→      <CardContent className="space-y-3">
+   450→        {!sections ? <TableSkeleton rows={4} cols={4} /> : (
+   451→          [...byGrade.entries()].map(([gradeName, list]) => (
+   452→            <div key={gradeName}>
+   453→              <p className="mb-1.5 text-sm font-semibold">{gradeName}</p>
+   454→              <div className="flex flex-wrap gap-2">
+   455→                {list.map((s) => (
+   456→                  <div key={s.id} className="rounded-lg border border-border bg-card px-3 py-2 text-sm">
+   457→                    <span className="font-semibold">شعبهٔ {s.label}</span>
+   458→                    <span className="text-xs text-muted-foreground">
+   459→                      {" "}· {faNum(s._count.enrollments)}/{faNum(s.capacity)}
+   460→                      {s.roomName ? ` · ${s.roomName}` : ""}
+   461→                      {s.shift ? ` · ${s.shift.name}` : ""}
+   462→                    </span>
+   463→                  </div>
+   464→                ))}
+   465→              </div>
+   466→            </div>
+   467→          ))
+   468→        )}
+   469→      </CardContent>
+   470→
+   471→      <Dialog open={open} onOpenChange={setOpen}>
+   472→        <DialogContent dir="rtl">
+   473→          <DialogHeader><DialogTitle>شعبهٔ صنف جدید</DialogTitle></DialogHeader>
+   474→          <div className="grid gap-3">
+   475→            <Field label="صنف *">
+   476→              <Select value={form.gradeLevelId} onValueChange={(v) => setForm({ ...form, gradeLevelId: v })}>
+   477→                <SelectTrigger><SelectValue placeholder="صنف…" /></SelectTrigger>
+   478→                <SelectContent className="max-h-64">
+   479→                  {(grades ?? []).map((g) => <SelectItem key={g.id} value={g.id}>{g.nameDari}</SelectItem>)}
+   480→                </SelectContent>
+   481→              </Select>
+   482→            </Field>
+   483→            <Field label="شعبهٔ مکتب *" hint="کمپس/لوکیشن — با شعبهٔ صنف فرق دارد">
+   484→              <Select value={form.branchId} onValueChange={(v) => setForm({ ...form, branchId: v })}>
+   485→                <SelectTrigger><SelectValue placeholder="شعبهٔ مکتب…" /></SelectTrigger>
+   486→                <SelectContent>
+   487→                  {(orgCtx?.branches ?? []).map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+   488→                </SelectContent>
+   489→              </Select>
+   490→            </Field>
+   491→            <Field label="وخت (اختیاری)">
+   492→              <Select value={form.shiftId || "none"} onValueChange={(v) => setForm({ ...form, shiftId: v === "none" ? "" : v })}>
+   493→                <SelectTrigger><SelectValue placeholder="انتخاب…" /></SelectTrigger>
+   494→                <SelectContent>
+   495→                  <SelectItem value="none">بدون وخت</SelectItem>
+   496→                  {(orgCtx?.shifts ?? []).map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+   497→                </SelectContent>
+   498→              </Select>
+   499→            </Field>
+   500→            <Field label="نام شعبه *"><Input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="الف / ب / ج" /></Field>
+   501→            <Field label="ظرفیت *"><Input dir="ltr" className="text-start" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value.replace(/[^0-9]/g, "") })} inputMode="numeric" /></Field>
+   502→            <Field label="نام اتاق"><Input value={form.roomName} onChange={(e) => setForm({ ...form, roomName: e.target.value })} placeholder="اتاق ۵۱" /></Field>
+   503→          </div>
+   504→          <DialogFooter>
+   505→            <Button variant="outline" onClick={() => setOpen(false)}>لغو</Button>
+   506→            <Button
+   507→              disabled={create.isPending || !form.gradeLevelId || form.label.length < 1 || !form.branchId || Number(form.capacity) < 1}
+   508→              onClick={async () => {
+   509→                try {
+   510→                  await create.mutateAsync({
+   511→                    academicYearId: orgCtx?.currentYear?.id ?? "",
+   512→                    gradeLevelId: form.gradeLevelId,
+   513→                    branchId: form.branchId,
+   514→                    shiftId: form.shiftId || null,
+   515→                    label: form.label,
+   516→                    capacity: Number(form.capacity),
+   517→                    roomName: form.roomName || null,
+   518→                  });
+   519→                  toast.success("شعبهٔ صنف ایجاد شد.");
+   520→                  setOpen(false);
+   521→                  setForm({ gradeLevelId: "", label: "", capacity: "30", roomName: "", branchId: "", shiftId: "" });
+   522→                } catch (err) {
+   523→                  toast.error(apiErrorMessage(err));
+   524→                }
+   525→              }}
+   526→            >
+   527→              {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ایجاد
+   528→            </Button>
+   529→          </DialogFooter>
+   530→        </DialogContent>
+   531→      </Dialog>
+   532→    </Card>
+   533→  );
+   534→}
+   535→
+   536→// ── Subjects tab ────────────────────────────────────────────────────────────
+   537→
+   538→function SubjectsTab() {
+   539→  const { data: subjects } = useSubjects();
+   540→  const create = useCreateSubject();
+   541→  const [form, setForm] = useState({ nameDari: "", code: "" });
+   542→  const [open, setOpen] = useState(false);
+   543→
+   544→  return (
+   545→    <Card>
+   546→      <CardHeader>
+   547→        <div className="flex flex-wrap items-center justify-between gap-2">
+   548→          <div>
+   549→            <CardTitle className="flex items-center gap-2 text-base"><BookOpen className="h-5 w-5 text-primary" /> مضامین</CardTitle>
+   550→            <CardDescription>
+   551→              مضامین قابل تنظیم‌اند و به‌عنوان برنامهٔ رسمی وزارت ادعا نمی‌شوند.
+   552→            </CardDescription>
+   553→          </div>
+   554→          <Button size="sm" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> مضمون جدید</Button>
+   555→        </div>
+   556→      </CardHeader>
+   557→      <CardContent>
+   558→        {!subjects ? <TableSkeleton rows={4} cols={2} /> : (
+   559→          <div className="flex flex-wrap gap-2">
+   560→            {subjects.map((s) => (
+   561→              <Badge key={s.id} variant="outline" className="px-3 py-1.5 text-sm">
+   562→                {s.nameDari} <Ltr className="ms-1 text-[10px] text-muted-foreground">{s.code}</Ltr>
+   563→              </Badge>
+   564→            ))}
+   565→          </div>
+   566→        )}
+   567→      </CardContent>
+   568→
+   569→      <Dialog open={open} onOpenChange={setOpen}>
+   570→        <DialogContent dir="rtl" className="max-w-sm">
+   571→          <DialogHeader><DialogTitle>مضمون جدید</DialogTitle></DialogHeader>
+   572→          <div className="grid gap-3">
+   573→            <Field label="نام مضمون *"><Input value={form.nameDari} onChange={(e) => setForm({ ...form, nameDari: e.target.value })} /></Field>
+   574→            <Field label="کد * (لاتین)"><Input dir="ltr" className="text-start" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} /></Field>
+   575→          </div>
+   576→          <DialogFooter>
+   577→            <Button variant="outline" onClick={() => setOpen(false)}>لغو</Button>
+   578→            <Button
+   579→              disabled={create.isPending || form.nameDari.length < 2 || form.code.length < 1}
+   580→              onClick={async () => {
+   581→                try {
+   582→                  await create.mutateAsync({ nameDari: form.nameDari, code: form.code, grades: [], isActive: true });
+   583→                  toast.success("مضمون ایجاد شد.");
+   584→                  setOpen(false);
+   585→                  setForm({ nameDari: "", code: "" });
+   586→                } catch (err) {
+   587→                  toast.error(apiErrorMessage(err));
+   588→                }
+   589→              }}
+   590→            >
+   591→              {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ایجاد
+   592→            </Button>
+   593→          </DialogFooter>
+   594→        </DialogContent>
+   595→      </Dialog>
+   596→    </Card>
+   597→  );
+   598→}
+   599→
+   600→// ── Modules tab ─────────────────────────────────────────────────────────────
+   601→
+   602→const MODULE_LABELS: Record<string, string> = {
+   603→  fees: "فیس و وصولی‌ها",
+   604→  accounting: "حسابداری",
+   605→  payroll: "معاشات",
+   606→  library: "کتابخانه",
+   607→  textbooks: "کتاب‌های درسی",
+   608→  transport: "ترانسپورت",
+   609→  inventory: "انبار و جنس‌ها",
+   610→  hr: "منابع بشری",
+   611→  communications: "ارتباطات و اعلانات",
+   612→  portals: "پورتال شاگرد و ولی",
+   613→};
+   614→
+   615→function ModulesTab() {
+   616→  const { data: settings } = useSettings();
+   617→  const update = useUpdateSettings();
+   618→  const [local, setLocal] = useState<Record<string, boolean> | null>(null);
+   619→
+   620→  if (!settings) return <TableSkeleton rows={4} cols={2} />;
+   621→  const current = local ?? settings.modules;
+   622→
+   623→  return (
+   624→    <Card>
+   625→      <CardHeader>
+   626→        <CardTitle className="flex items-center gap-2 text-base"><LayoutGrid className="h-5 w-5 text-primary" /> بخش‌های سیستم</CardTitle>
+   627→        <CardDescription>
+   628→          بخش‌های غیرضروری (از جمله فیس برای مکتب‌های دولتی) قابل غیرفعال‌شدن است.
+   629→          معلومات موجود حذف نمی‌شود.
+   630→        </CardDescription>
+   631→      </CardHeader>
+   632→      <CardContent className="space-y-3">
+   633→        <div className="grid gap-2 sm:grid-cols-2">
+   634→          {Object.entries(MODULE_LABELS).map(([key, label]) => (
+   635→            <label key={key} className="transition-soft flex items-center justify-between gap-3 rounded-lg border border-border p-3 hover:border-primary/40">
+   636→              <div>
+   637→                <p className="text-sm font-medium">{label}</p>
+   638→                <p className="text-xs text-muted-foreground">
+   639→                  {current[key] ? "فعال" : "غیرفعال"}
+   640→                </p>
+   641→              </div>
+   642→              <Switch checked={Boolean(current[key])} onCheckedChange={(v) => setLocal({ ...current, [key]: v })} />
+   643→            </label>
+   644→          ))}
+   645→        </div>
+   646→        <div className="flex gap-2">
+   647→          <Button
+   648→            disabled={update.isPending || local === null}
+   649→            onClick={async () => {
+   650→              try {
+   651→                await update.mutateAsync({ modules: current });
+   652→                toast.success("تنظیمات بخش‌ها ذخیره شد.");
+   653→                setLocal(null);
+   654→              } catch (err) {
+   655→                toast.error(apiErrorMessage(err));
+   656→              }
+   657→            }}
+   658→          >
+   659→            {update.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ذخیره
+   660→          </Button>
+   661→          {local ? <Button variant="ghost" onClick={() => setLocal(null)}>واگردانی</Button> : null}
+   662→        </div>
+   663→      </CardContent>
+   664→    </Card>
+   665→  );
+   666→}
+   667→
+   668→// ── Audit tab ───────────────────────────────────────────────────────────────
+   669→
+   670→function AuditTab() {
+   671→  const [page, setPage] = useState(1);
+   672→  const { data, isLoading } = useAuditEvents({ page });
+   673→
+   674→  return (
+   675→    <Card>
+   676→      <CardHeader>
+   677→        <CardTitle className="flex items-center gap-2 text-base"><History className="h-5 w-5 text-primary" /> ریکارود نظارتی</CardTitle>
+   678→        <CardDescription>هر تغییر با انسان، عمل، مورد، وخت و دلیل — بدون رمز و توکن</CardDescription>
+   679→      </CardHeader>
+   680→      <CardContent>
+   681→        {isLoading || !data ? (
+   682→          <TableSkeleton rows={8} cols={4} />
+   683→        ) : data.items.length === 0 ? (
+   684→          <p className="p-4 text-center text-sm text-muted-foreground">رویدادی ثبت نشده است.</p>
+   685→        ) : (
+   686→          <>
+   687→            <div className="overflow-x-auto">
+   688→              <Table>
+   689→                <TableHeader>
+   690→                  <TableRow>
+   691→                    <TableHead className="text-start">وخت</TableHead>
+   692→                    <TableHead className="text-start">انجام‌دهنده</TableHead>
+   693→                    <TableHead className="text-start">عمل</TableHead>
+   694→                    <TableHead className="text-start">مورد</TableHead>
+   695→                    <TableHead className="text-start">دلیل</TableHead>
+   696→                  </TableRow>
+   697→                </TableHeader>
+   698→                <TableBody>
+   699→                  {data.items.map((e) => (
+   700→                    <TableRow key={e.id}>
+   701→                      <TableCell className="text-xs text-muted-foreground">{formatInstantJalaliDateTime(e.at)}</TableCell>
+   702→                      <TableCell className="text-sm">{e.actorName}</TableCell>
+   703→                      <TableCell dir="ltr" className="font-mono text-xs">{e.action}</TableCell>
+   704→                      <TableCell className="text-xs text-muted-foreground">{e.entity}</TableCell>
+   705→                      <TableCell className="max-w-48 truncate text-xs">{e.reason ?? "—"}</TableCell>
+   706→                    </TableRow>
+   707→                  ))}
+   708→                </TableBody>
+   709→              </Table>
+   710→            </div>
+   711→            <div className="pt-3">
+   712→              <Pager page={data.meta.page} pageSize={data.meta.pageSize} total={data.meta.total} onPage={setPage} />
+   713→            </div>
+   714→          </>
+   715→        )}
+   716→      </CardContent>
+   717→    </Card>
+   718→  );
+   719→}
+   720→
+   721→// ── Field helper ────────────────────────────────────────────────────────────
+   722→
+   723→function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+   724→  return (
+   725→    <div className="space-y-1.5">
+   726→      <Label>{label}</Label>
+   727→      {children}
+   728→      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+   729→    </div>
+   730→  );
+   731→}
+   732→
+   733→// ── Main settings view ──────────────────────────────────────────────────────
+   734→
+   735→export function SettingsView({ tab }: { tab: string }) {
+   736→  const { data: me } = useMe();
+   737→  const canUsers = hasGrant(me, "users.view");
+   738→  const canManage = hasGrant(me, "settings.manage");
+   739→  const canAudit = hasGrant(me, "audit.view");
+   740→  const canAcademic = hasGrant(me, "academic.view");
+   741→
+   742→  const validTab = ["org", "users", "roles", "years", "sections", "subjects", "modules", "audit"].includes(tab) ? tab : "org";
+   743→
+   744→  return (
+   745→    <div className="space-y-4">
+   746→      <header>
+   747→        <h1 className="text-2xl font-bold">تنظیمات</h1>
+   748→        <p className="mt-1 text-sm text-muted-foreground">
+   749→          پروفایل مکتب، کاربران، اجازه‌ها و ساختار تعلیمی
+   750→        </p>
+   751→      </header>
+   752→
+   753→      <Tabs value={validTab} dir="rtl" onValueChange={(v) => navigate(`/settings/${v}`)}>
+   754→        <TabsList className="flex-wrap h-auto">
+   755→          <TabsTrigger value="org">پروفایل مکتب</TabsTrigger>
+   756→          {canUsers ? <TabsTrigger value="users">کاربران</TabsTrigger> : null}
+   757→          <TabsTrigger value="roles">نقش‌ها و اجازه‌ها</TabsTrigger>
+   758→          {canAcademic ? <TabsTrigger value="years">سال‌های تعلیمی</TabsTrigger> : null}
+   759→          {canAcademic ? <TabsTrigger value="sections">شعبه‌های صنف</TabsTrigger> : null}
+   760→          {canAcademic ? <TabsTrigger value="subjects">مضامین</TabsTrigger> : null}
+   761→          <TabsTrigger value="modules" disabled={!canManage} title={canManage ? undefined : "نیازمند اجازهٔ settings.manage"}>بخش‌ها</TabsTrigger>
+   762→          {canAudit ? <TabsTrigger value="audit">ریکارود نظارتی</TabsTrigger> : null}
+   763→        </TabsList>
+   764→
+   765→        <TabsContent value="org" className="mt-4"><OrgProfileTab /></TabsContent>
+   766→        <TabsContent value="users" className="mt-4">{canUsers ? <UsersTab /> : null}</TabsContent>
+   767→        <TabsContent value="roles" className="mt-4"><RolesTab /></TabsContent>
+   768→        <TabsContent value="years" className="mt-4">{canAcademic ? <YearsTab /> : null}</TabsContent>
+   769→        <TabsContent value="sections" className="mt-4">{canAcademic ? <SectionsTab /> : null}</TabsContent>
+   770→        <TabsContent value="subjects" className="mt-4">{canAcademic ? <SubjectsTab /> : null}</TabsContent>
+   771→        <TabsContent value="modules" className="mt-4"><ModulesTab /></TabsContent>
+   772→        <TabsContent value="audit" className="mt-4">{canAudit ? <AuditTab /> : null}</TabsContent>
+   773→      </Tabs>
+   774→    </div>
+   775→  );
+   776→}
+   777→

@@ -15,11 +15,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { ClipboardCheck, Loader2, Lock, LockOpen, Save, Users } from "lucide-react";
+import { ClipboardCheck, Loader2, Lock, LockOpen, Save, Trash2, Users } from "lucide-react";
 import {
   useMe, useSections, useAttendanceSessions, useAttendanceSession,
   useUpsertAttendanceSession, useSaveAttendanceRecords, useSubmitAttendanceSession,
-  useReopenAttendanceSession, useAttendanceSummary,
+  useReopenAttendanceSession, useAttendanceSummary, useDeleteAttendanceSession,
 } from "@/lib/api/hooks";
 import { StatusBadge, EmptyState, NoResultsState, TableSkeleton, JalaliDateInput, Ltr } from "@/components/shared";
 import { faNum, faDate, attendanceStatusLabel, sessionStatusLabel } from "@/lib/format";
@@ -70,6 +70,8 @@ export function AttendanceView() {
   const save = useSaveAttendanceRecords();
   const submit = useSubmitAttendanceSession();
   const reopen = useReopenAttendanceSession();
+  const del = useDeleteAttendanceSession();
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; date: string } | null>(null);
 
   // Local draft marks: studentId → status (initialized from server records).
   const [draft, setDraft] = useState<Record<string, Mark>>({});
@@ -341,20 +343,32 @@ export function AttendanceView() {
             ) : (
               <div className="space-y-1.5">
                 {(sessions ?? []).slice(0, 8).map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => { setDate(s.date); setActiveSessionId(s.id); setDraftLoadedFor(null); }}
-                    className="transition-soft flex w-full items-center justify-between rounded-md border border-border px-3 py-2 text-sm hover:border-primary/50"
-                  >
-                    <span className="font-medium">{faDate(s.date)}</span>
-                    <span className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {s.recordCount !== null ? `${faNum(s.recordCount)} ثبت` : ""}
+                  <div key={s.id} className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => { setDate(s.date); setActiveSessionId(s.id); setDraftLoadedFor(null); }}
+                      className="transition-soft flex flex-1 items-center justify-between rounded-md border border-border px-3 py-2 text-sm hover:border-primary/50"
+                    >
+                      <span className="font-medium">{faDate(s.date)}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {s.recordCount !== null ? `${faNum(s.recordCount)} ثبت` : ""}
+                        </span>
+                        <StatusBadge status={s.status} label={sessionStatusLabel(s.status)} />
                       </span>
-                      <StatusBadge status={s.status} label={sessionStatusLabel(s.status)} />
-                    </span>
-                  </button>
+                    </button>
+                    {canRecord && s.status === "open" ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="حذف پیش‌نویس"
+                        disabled={del.isPending}
+                        onClick={() => setDeleteTarget({ id: s.id, date: s.date })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    ) : null}
+                  </div>
                 ))}
               </div>
             )}
@@ -364,6 +378,41 @@ export function AttendanceView() {
 
       {reopenTarget ? (
         <ReopenDialog sessionId={reopenTarget} onClose={() => setReopenTarget(null)} reopen={reopen} />
+      ) : null}
+
+      {deleteTarget ? (
+        <Dialog open onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>حذف پیش‌نویس حاضری — {faDate(deleteTarget.date)}</DialogTitle>
+              <DialogDescription>
+                فقط سیشن‌های باز (قطعی‌نشده) قابل حذف‌اند. علائم ذخیره‌شدهٔ این پیش‌نویس نیز
+                حذف می‌شود و عملیات در ریکارود نظارتی ثبت می‌گردد.
+              </DialogDescription>
+            </DialogHeader>
+            <Button
+              variant="destructive"
+              className="w-full"
+              disabled={del.isPending}
+              onClick={async () => {
+                try {
+                  await del.mutateAsync({ sessionId: deleteTarget.id });
+                  toast.success("پیش‌نویس حاضری حذف شد.");
+                  if (activeSessionId === deleteTarget.id) {
+                    setActiveSessionId(null);
+                    setDraftLoadedFor(null);
+                  }
+                  setDeleteTarget(null);
+                } catch (err) {
+                  toast.error((err as Error).message);
+                }
+              }}
+            >
+              {del.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              حذف قطعی پیش‌نویس
+            </Button>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </div>
   );

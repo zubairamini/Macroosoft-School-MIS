@@ -63,6 +63,13 @@ export const PERMISSIONS = [
   "services.manage",
   "reports.view",
   "year_end.manage",
+  // ── Phase 6: branch master data (org-level, admin / مدیر عام only) ──
+  "branches.manage",
+  // ── Phase 7: discipline & behavior register ──────────────
+  "discipline.view",
+  "discipline.manage",
+  // ── Phase 8: analytics & at-risk oversight ──────────────
+  "analytics.view",
   "settings.view",
   "settings.manage",
   "users.view",
@@ -193,6 +200,13 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "services.manage", scope: "all" },
     { permission: "reports.view", scope: "all" },
     { permission: "year_end.manage", scope: "all" },
+    // Phase 6 — org-level branch master data (create/edit/deactivate).
+    { permission: "branches.manage", scope: "all" },
+    // Phase 7 — full discipline register authority across branches.
+    { permission: "discipline.view", scope: "all" },
+    { permission: "discipline.manage", scope: "all" },
+    // Phase 8 — org-wide analytics & at-risk oversight.
+    { permission: "analytics.view", scope: "all" },
     { permission: "settings.view", scope: "all" },
     { permission: "settings.manage", scope: "all" },
     { permission: "users.view", scope: "all" },
@@ -248,6 +262,13 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "services.manage", scope: "all" },
     { permission: "reports.view", scope: "all" },
     { permission: "year_end.manage", scope: "all" },
+    // Phase 6 — branch master data authority (shared with admin only).
+    { permission: "branches.manage", scope: "all" },
+    // Phase 7 — discipline register across all branches.
+    { permission: "discipline.view", scope: "all" },
+    { permission: "discipline.manage", scope: "all" },
+    // Phase 8 — org-wide analytics & at-risk oversight.
+    { permission: "analytics.view", scope: "all" },
     { permission: "settings.view", scope: "all" },
     { permission: "users.view", scope: "all" },
     { permission: "roles.view", scope: "all" },
@@ -289,6 +310,11 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "services.view", scope: "branch" },
     { permission: "services.manage", scope: "branch" },
     { permission: "reports.view", scope: "branch" },
+    // Phase 7 — owns the discipline register of the OWN branch.
+    { permission: "discipline.view", scope: "branch" },
+    { permission: "discipline.manage", scope: "branch" },
+    // Phase 8 — branch analytics & at-risk oversight.
+    { permission: "analytics.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "users.view", scope: "branch" },
     { permission: "roles.view", scope: "all" },
@@ -324,6 +350,11 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     // Phase 5 — services & registry reports of the OWN branch.
     { permission: "services.view", scope: "branch" },
     { permission: "reports.view", scope: "branch" },
+    // Phase 7 — co-owns the discipline register of the OWN branch.
+    { permission: "discipline.view", scope: "branch" },
+    { permission: "discipline.manage", scope: "branch" },
+    // Phase 8 — branch analytics & at-risk oversight.
+    { permission: "analytics.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "roles.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
@@ -412,6 +443,9 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     // Phase 4/5 — branch announcements; reports auto-narrow to own sections.
     { permission: "announcements.view", scope: "branch" },
     { permission: "reports.view", scope: "branch" },
+    // Phase 7 — records & follows up discipline for own class sections only.
+    { permission: "discipline.view", scope: "section" },
+    { permission: "discipline.manage", scope: "section" },
     { permission: "roles.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
     { permission: "search.use", scope: "section" },
@@ -493,6 +527,9 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "announcements.view", scope: "branch" },
     { permission: "services.view", scope: "branch" },
     { permission: "reports.view", scope: "branch" },
+    // Phase 7/8 — read-only discipline register & analytics of the OWN branch.
+    { permission: "discipline.view", scope: "branch" },
+    { permission: "analytics.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "users.view", scope: "branch" },
     { permission: "roles.view", scope: "all" },

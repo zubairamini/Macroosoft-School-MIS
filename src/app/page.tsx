@@ -19,6 +19,8 @@ import { AdmissionStepper } from "@/features/admissions/admission-stepper";
 import { StaffView } from "@/features/staff/staff-view";
 import { TimetableView } from "@/features/timetable/timetable-view";
 import { AttendanceView } from "@/features/attendance/attendance-view";
+import { DisciplineView } from "@/features/discipline/discipline-view";
+import { AnalyticsView } from "@/features/analytics/analytics-view";
 import { ExamsView } from "@/features/exams/exams-view";
 import { SettingsView } from "@/features/settings/settings-view";
 import { FeesView } from "@/features/finance/fees-view";
@@ -160,6 +162,10 @@ function AppRoutes() {
     content = hasGrant(me, "timetable.view") ? <TimetableView /> : <NoPermissionView />;
   } else if (a === "attendance") {
     content = hasGrant(me, "attendance.view") ? <AttendanceView /> : <NoPermissionView />;
+  } else if (a === "discipline") {
+    content = hasGrant(me, "discipline.view") ? <DisciplineView /> : <NoPermissionView />;
+  } else if (a === "analytics") {
+    content = hasGrant(me, "analytics.view") ? <AnalyticsView /> : <NoPermissionView />;
   } else if (a === "exams") {
     content = hasGrant(me, "assessments.view") ? <ExamsView /> : <NoPermissionView />;
   } else if (a === "finance") {

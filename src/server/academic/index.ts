@@ -136,6 +136,56 @@ export async function listBranches(ctx?: { ownBranchIds?: string[]; isCrossBranc
   return db.branch.findMany({ where, orderBy: { createdAt: "asc" } });
 }
 
+/** Phase 6 — master-data listing for the branch management screen:
+ *  every branch the viewer may see (admin / مدیر عام: ALL, including
+ *  deactivated) together with section / staff / active-student counts. */
+export async function listBranchesMaster(ctx: AuthContext) {
+  const org = await requireOrg();
+  const visible = ctx.isCrossBranch
+    ? { orgId: org.id }
+    : ctx.ownBranchIds.length > 0
+      ? { orgId: org.id, id: { in: ctx.ownBranchIds } }
+      : { orgId: org.id, id: { in: ["__none__"] } };
+  const branches = await db.branch.findMany({
+    where: visible,
+    orderBy: { createdAt: "asc" },
+    include: {
+      classSections: { select: { id: true } },
+      _count: { select: { classSections: true, staffMembers: true } },
+    },
+  });
+
+  // Active students per branch = distinct ACTIVE enrollments in the
+  // branch's class sections (current year, any grade).
+  const sectionIds = branches.flatMap((b) => b.classSections.map((s) => s.id));
+  const enrollCounts = sectionIds.length
+    ? await db.enrollment.groupBy({
+        by: ["classSectionId"],
+        where: { classSectionId: { in: sectionIds }, status: "active" },
+        _count: { _all: true },
+      })
+    : [];
+  const bySection = new Map(enrollCounts.map((e) => [e.classSectionId, e._count._all]));
+
+  return branches.map((b) => ({
+    id: b.id,
+    name: b.name,
+    code: b.code,
+    province: b.province,
+    district: b.district,
+    address: b.address,
+    phone: b.phone,
+    isActive: b.isActive,
+    createdAt: b.createdAt,
+    sectionCount: b._count.classSections,
+    staffCount: b._count.staffMembers,
+    activeStudents: b.classSections.reduce(
+      (sum, s) => sum + (bySection.get(s.id) ?? 0),
+      0,
+    ),
+  }));
+}
+
 export async function listAcademicYears() {
   const org = await requireOrg();
   return db.academicYear.findMany({
@@ -274,11 +324,17 @@ export async function updateBranch(
   const org = await requireOrg();
   const branch = await db.branch.findFirst({ where: { id: branchId, orgId: org.id } });
   if (!branch) throw errors.notFound("شعبهٔ مکتب");
+  // Code is a natural key: renaming must stay unique inside the org.
+  if (dto.code && dto.code !== branch.code) {
+    const dup = await db.branch.findFirst({ where: { orgId: org.id, code: dto.code } });
+    if (dup) throw errors.conflict("یک شعبهٔ مکتب با این کد از قبل موجود است.");
+  }
   return db.$transaction(async (tx) => {
     const row = await tx.branch.update({
       where: { id: branch.id },
       data: {
         name: dto.name ?? branch.name,
+        code: dto.code ?? branch.code,
         province: dto.province ?? branch.province,
         district: dto.district ?? branch.district,
         address: dto.address ?? branch.address,

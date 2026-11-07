@@ -951,3 +951,84 @@ export interface RolloverApplyResultDto {
   skipped: number;
   closed: boolean;
 }
+
+// ── Phase 6: branch master data ─────────────────────────────────────────────
+
+export interface BranchMasterDto {
+  id: string;
+  name: string;
+  code: string;
+  province: string | null;
+  district: string | null;
+  address: string | null;
+  phone: string | null;
+  isActive: boolean;
+  createdAt: string;
+  sectionCount: number;
+  staffCount: number;
+  activeStudents: number;
+}
+
+// ── Phase 7: discipline & behavior register ─────────────────────────────────
+
+export interface DisciplineIncidentDto {
+  id: string;
+  branchId: string;
+  branchName: string;
+  studentId: string;
+  studentNumber: string;
+  firstName: string;
+  fatherName: string;
+  date: string;
+  kind: string;
+  severity: string;
+  description: string;
+  actionTaken: string;
+  followUpNote: string | null;
+  resolvedAt: string | null;
+  recorderName: string;
+  createdAt: string;
+}
+
+// ── Phase 8: analytics overview ─────────────────────────────────────────────
+
+export interface AnalyticsTrendPointDto {
+  key: string;
+  label: string;
+  absentRatePct: number | null;
+  incidents: number;
+  merits: number;
+  billedDiram: number;
+  collectedDiram: number;
+}
+
+export interface AtRiskStudentDto {
+  studentId: string;
+  studentNumber: string;
+  firstName: string;
+  fatherName: string;
+  gradeName: string;
+  sectionLabel: string;
+  branchName: string;
+  flags: Array<"attendance" | "academics" | "finance">;
+  attendanceRate: number | null;
+  averagePct: number | null;
+  overdueBalanceDiram: number;
+  score: number;
+}
+
+export interface AnalyticsOverviewDto {
+  yearName: string | null;
+  generatedAt: string;
+  kpis: {
+    activeStudents: number;
+    submittedSessionRecords: number;
+    collectionRatePct: number | null;
+    billedDiram: number;
+    collectedDiram: number;
+    openIncidents: number;
+    meritIncidents: number;
+  };
+  trends: AnalyticsTrendPointDto[];
+  atRisk: AtRiskStudentDto[];
+}

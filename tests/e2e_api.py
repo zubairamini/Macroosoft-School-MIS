@@ -1194,7 +1194,211 @@ def main():
     check("cashier has no reports.view (403)", status == 403, f"status={status}")
 
     # ── 17. Phase 5 — Year-end rollover (repeat-safe) ────────────────────
-    print("\n[17] Phase 5 — Year-end rollover (repeat-safe promotion batch)")
+    # ── 18. Phase 6 — branch master data & attendance draft delete ──────
+    print("\n[18] Phase 6 — branch master data (CRUD) & attendance draft delete")
+
+    status, body, _ = req("GET", "/branches", cookie=admin_cookie)
+    branches = body.get("data", [])
+    check("admin lists branch master data with stats", status == 200 and len(branches) >= 2
+          and all(("sectionCount" in b and "activeStudents" in b) for b in branches),
+          f"status={status} n={len(branches)}")
+    main_br = next((b for b in branches if "کارتهٔ نو" in b["name"]), None)
+    check("seeded main branch present with active students",
+          main_br is not None and main_br["activeStudents"] > 0,
+          f"activeStudents={main_br['activeStudents'] if main_br else None}")
+
+    # Branch-bound manager sees ONLY their own branch (isolation).
+    status, body, _ = req("GET", "/branches", cookie=mgr_cookie)
+    mgr_branches = body.get("data", [])
+    check("branch manager sees only own branch",
+          status == 200 and len(mgr_branches) == 1 and "کارتهٔ نو" in mgr_branches[0]["name"],
+          f"n={len(mgr_branches)}")
+
+    # Branch CRUD is org-level: admin / مدیر عام only.
+    status, body, _ = req("POST", "/branches", cookie=mgr_cookie, body={
+        "name": "شعبهٔ غیرمجاز", "code": "NOPE-1",
+    })
+    check("branch manager cannot create branches (403)", status == 403, f"status={status}")
+
+    status, body, _ = req("POST", "/branches", cookie=admin_cookie, body={
+        "name": "شعبهٔ مرکزی — کارتهٔ نو", "code": main_br["code"],
+    })
+    check("duplicate branch code rejected (409)", status == 409, f"status={status}")
+
+    status, body, _ = req("POST", "/branches", cookie=admin_cookie, body={
+        "name": "شعبهٔ آزمون", "code": "TST-99",
+        "province": "کابل", "district": "ناحیهٔ آزمون", "phone": "+93700000000",
+    })
+    test_branch = body.get("data", {})
+    check("admin creates a branch", status == 200 and test_branch.get("code") == "TST-99",
+          f"status={status} {body.get('error', {}).get('message')}")
+
+    status, body, _ = req("PATCH", f"/branches/{test_branch['id']}", cookie=admin_cookie, body={
+        "name": "شعبهٔ آزمون (ویرایش‌شده)", "isActive": False,
+    })
+    check("admin edits & deactivates the branch",
+          status == 200 and body.get("data", {}).get("isActive") is False, f"status={status}")
+
+    status, body, _ = req("GET", "/branches", cookie=admin_cookie)
+    renamed = next((b for b in body.get("data", []) if b["id"] == test_branch["id"]), None)
+    check("branch list reflects the edit",
+          renamed is not None and renamed["isActive"] is False and "ویرایش‌شده" in renamed["name"])
+
+    # Attendance drafts are deletable; submitted history is not.
+    status, body, _ = req("POST", "/attendance/sessions", cookie=teacher_cookie, body={
+        "classSectionId": sec40["id"], "date": "2027-02-15", "period": 0,
+    })
+    draft_id = body.get("data", {}).get("id")
+    check("draft attendance session opened", status == 200 and draft_id is not None,
+          f"status={status}")
+
+    status, body, _ = req("DELETE", f"/attendance/sessions/{draft_id}", cookie=teacher_cookie)
+    check("draft session deleted (200)", status == 200, f"status={status}")
+
+    status, body, _ = req("GET", f"/attendance/sessions/{draft_id}", cookie=teacher_cookie)
+    check("deleted session is gone (404)", status == 404, f"status={status}")
+
+    # Submitted sessions are statistical history — find (or make) one, then
+    # verify deletion is refused.
+    status, body, _ = req("GET", f"/attendance/sessions?classSectionId={sec40['id']}&status=submitted",
+                          cookie=teacher_cookie)
+    submitted_rows = body.get("data", [])
+    if not submitted_rows:
+        status, body, _ = req("POST", "/attendance/sessions", cookie=teacher_cookie, body={
+            "classSectionId": sec40["id"], "date": "2027-02-16", "period": 0,
+        })
+        fresh_id = body["data"]["id"]
+        status, body, _ = req("GET", f"/attendance/sessions/{fresh_id}", cookie=teacher_cookie)
+        fresh_roster = body["data"]["roster"]
+        status, body, _ = req("PUT", f"/attendance/sessions/{fresh_id}", cookie=teacher_cookie, body={
+            "version": 1,
+            "records": [{"studentId": r["studentId"], "status": "present"} for r in fresh_roster],
+        })
+        status, body, _ = req("POST", f"/attendance/sessions/{fresh_id}/submit", cookie=teacher_cookie,
+                              body={"version": 2})
+        submitted_rows = [{"id": fresh_id}]
+    submitted_id = submitted_rows[0]["id"]
+    status, body, _ = req("DELETE", f"/attendance/sessions/{submitted_id}", cookie=teacher_cookie)
+    check("submitted session cannot be deleted (400)", status == 400, f"status={status}")
+
+    # ── 19. Phase 7 — discipline & behavior register ─────────────────────
+    print("\n[19] Phase 7 — discipline & behavior register (CRUD + isolation)")
+
+    status, body, _ = req("GET", "/discipline", cookie=admin_cookie)
+    incidents = body.get("data", [])
+    check("admin lists the discipline register", status == 200 and len(incidents) >= 6,
+          f"n={len(incidents)}")
+
+    status, body, _ = req("GET", "/discipline?kind=merit", cookie=admin_cookie)
+    merits = body.get("data", [])
+    check("kind filter returns only merits",
+          status == 200 and len(merits) >= 2 and all(i["kind"] == "merit" for i in merits),
+          f"n={len(merits)}")
+
+    status, body, _ = req("GET", "/discipline?resolved=false", cookie=admin_cookie)
+    unresolved = body.get("data", [])
+    check("resolved=false filter excludes resolved rows",
+          status == 200 and len(unresolved) >= 1 and all(i["resolvedAt"] is None for i in unresolved),
+          f"n={len(unresolved)}")
+
+    # RBAC: cashier holds no discipline grants at all.
+    status, body, _ = req("GET", "/discipline", cookie=cashier_cookie)
+    check("cashier cannot view discipline (403)", status == 403, f"status={status}")
+    status, body, _ = req("POST", "/discipline", cookie=cashier_cookie, body={
+        "studentId": "x", "date": "2026-11-05", "kind": "late", "description": "آزمون",
+    })
+    check("cashier cannot record discipline (403)", status == 403, f"status={status}")
+
+    # Pick students: one of the teacher's own section, one from the other branch.
+    status, body, _ = req("GET", "/students?pageSize=50", cookie=teacher_cookie)
+    t_students = body.get("data", [])
+    t_student = next((s for s in t_students
+                      if (s.get("currentEnrollment") or {}).get("classSectionId") == sec40["id"]),
+                     None)
+    check("teacher sees own-section students for the picker", t_student is not None)
+
+    status, body, _ = req("GET", "/students?pageSize=100", cookie=admin_cookie)
+    b2_student = next((s for s in body.get("data", [])
+                       if "خوشحال خان" in (s.get("currentEnrollment") or {}).get("branchName", "")), None)
+
+    # Teacher records an incident for an OWN-section student.
+    status, body, _ = req("POST", "/discipline", cookie=teacher_cookie, body={
+        "studentId": t_student["id"], "date": "2026-11-05", "kind": "late",
+        "severity": "low", "description": "آزمون e2e — تأخیر مکرر",
+    })
+    teacher_incident = body.get("data", {})
+    check("teacher records an incident for own-section student",
+          status == 200 and teacher_incident.get("kind") == "late",
+          f"status={status} {body.get('error', {}).get('message')}")
+
+    # Teacher cannot record for a student of ANOTHER branch.
+    if b2_student is not None:
+        status, body, _ = req("POST", "/discipline", cookie=teacher_cookie, body={
+            "studentId": b2_student["id"], "date": "2026-11-05", "kind": "misconduct",
+            "description": "آزمون e2e — تلاش ثبت شعبهٔ دیگر",
+        })
+        check("teacher cannot record for another branch's student (403)",
+              status == 403, f"status={status}")
+
+    # Branch manager of branch 2 sees ONLY branch-2 incidents.
+    status, body, _ = req("GET", "/discipline", cookie=manager2_cookie)
+    m2_incidents = body.get("data", [])
+    check("manager2 sees only own-branch incidents",
+          status == 200 and all("خوشحال خان" in i["branchName"] for i in m2_incidents),
+          f"n={len(m2_incidents)} branches={set(i['branchName'] for i in m2_incidents)}")
+
+    # Resolve (PATCH) then delete the teacher-recorded incident.
+    status, body, _ = req("PATCH", f"/discipline/{teacher_incident['id']}", cookie=teacher_cookie, body={
+        "resolved": True, "followUpNote": "با ولی صحبت شد.",
+    })
+    check("incident resolved with follow-up note",
+          status == 200 and body.get("data", {}).get("resolvedAt") is not None,
+          f"status={status}")
+
+    status, body, _ = req("DELETE", f"/discipline/{teacher_incident['id']}", cookie=teacher_cookie)
+    check("incident deleted (200)", status == 200, f"status={status}")
+
+    status, body, _ = req("GET", "/discipline", cookie=admin_cookie)
+    check("deleted incident no longer listed",
+          all(i["id"] != teacher_incident["id"] for i in body.get("data", [])))
+
+    # Manager of branch 2 records an unresolved incident (feeds analytics).
+    if b2_student is not None:
+        status, body, _ = req("POST", "/discipline", cookie=manager2_cookie, body={
+            "studentId": b2_student["id"], "date": "2026-11-04", "kind": "misconduct",
+            "severity": "medium", "description": "آزمون e2e — بدرفتاری در صنف",
+        })
+        check("manager2 records incident for own-branch student", status == 200,
+              f"status={status}")
+
+    # ── 20. Phase 8 — analytics overview ─────────────────────────────────
+    print("\n[20] Phase 8 — analytics overview (KPIs, trends, at-risk)")
+
+    status, body, _ = req("GET", "/analytics/overview", cookie=admin_cookie)
+    ov = body.get("data", {})
+    check("admin loads the analytics overview", status == 200 and "kpis" in ov,
+          f"status={status}")
+    check("KPIs: active students counted", ov.get("kpis", {}).get("activeStudents", 0) > 0,
+          f"kpis={ov.get('kpis')}")
+    check("trends cover six Solar Hijri months",
+          len(ov.get("trends", [])) == 6 and all(t.get("label") for t in ov.get("trends", [])),
+          f"n={len(ov.get('trends', []))}")
+    check("at-risk rows carry flags + evidence fields",
+          all(("flags" in r and "score" in r and "attendanceRate" in r) for r in ov.get("atRisk", [])))
+
+    status, body, _ = req("GET", "/analytics/overview", cookie=teacher_cookie)
+    check("teacher has no analytics access (403)", status == 403, f"status={status}")
+    status, body, _ = req("GET", "/analytics/overview", cookie=cashier_cookie)
+    check("cashier has no analytics access (403)", status == 403, f"status={status}")
+
+    status, body, _ = req("GET", "/analytics/overview", cookie=manager2_cookie)
+    m2_ov = body.get("data", {})
+    m2_risk = m2_ov.get("atRisk", [])
+    check("manager2 analytics stays inside own branch",
+          status == 200 and all("خوشحال خان" in r.get("branchName", "") for r in m2_risk),
+          f"n={len(m2_risk)} branches={set(r.get('branchName') for r in m2_risk)}")
+
+    print("\n[21] Phase 5 — Year-end rollover (runs LAST: closes the year)")
 
     status, body, _ = req("GET", "/academic-years", cookie=gm_cookie)
     years = body.get("data", [])
