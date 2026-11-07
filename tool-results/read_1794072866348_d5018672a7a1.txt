@@ -1,0 +1,981 @@
+     1→// Services view — Phase 5: transport routes & passengers, inventory ledger
+     2→// (انبار), guest register and the event calendar. One screen, four tabs.
+     3→
+     4→"use client";
+     5→
+     6→import { useState } from "react";
+     7→import { Card, CardContent } from "@/components/ui/card";
+     8→import { Button } from "@/components/ui/button";
+     9→import { Input } from "@/components/ui/input";
+    10→import { Label } from "@/components/ui/label";
+    11→import { Textarea } from "@/components/ui/textarea";
+    12→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    13→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+    14→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+    15→import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+    16→import { toast } from "sonner";
+    17→import { Bus, Loader2, Plus, Package, UserCheck, CalendarDays, Search, ArrowDownUp, PackageX } from "lucide-react";
+    18→import { useMe, useOrgContext, useStudents, useTransportRoutes, useCreateTransportRoute, useUpdateTransportRoute, useTransportPassengers, useAddTransportPassenger, useUpdateTransportPassenger, useInventoryItems, useCreateInventoryItem, useInventoryMovements, useRecordInventoryMovement, useGuestVisits, useCreateGuestVisit, useCheckoutGuest, useSchoolEvents, useCreateSchoolEvent } from "@/lib/api/hooks";
+    19→import { EmptyState, NoResultsState, TableSkeleton, Ltr, KpiCard, JalaliDateInput } from "@/components/shared";
+    20→import { faNum, faMoneyNum, faDate, formatInstantJalaliDateTime } from "@/lib/format";
+    21→import { hasGrant } from "@/app-shell/shell";
+    22→import { apiErrorMessage } from "@/lib/api/hooks";
+    23→import { FinBadge, FinHeader } from "@/features/finance/shared";
+    24→
+    25→const EVENT_KINDS = [
+    26→  { value: "meeting", label: "جلسه" },
+    27→  { value: "exam", label: "امتحان" },
+    28→  { value: "holiday", label: "رخصتی" },
+    29→  { value: "ceremony", label: "مراسم" },
+    30→  { value: "other", label: "دیگر" },
+    31→];
+    32→
+    33→export function ServicesView() {
+    34→  const { data: me } = useMe();
+    35→  const canManage = hasGrant(me, "services.manage");
+    36→  const [tab, setTab] = useState("transport");
+    37→
+    38→  return (
+    39→    <div className="space-y-4">
+    40→      <FinHeader
+    41→        title="خدمات مکتب"
+    42→        subtitle="ترانسپورت، انبار، ثبت مهمان‌ها و تقویم رویدادها — همه محدود به شعبهٔ فعال شما."
+    43→      />
+    44→
+    45→      <Tabs value={tab} onValueChange={setTab}>
+    46→        <TabsList>
+    47→          <TabsTrigger value="transport">ترانسپورت</TabsTrigger>
+    48→          <TabsTrigger value="inventory">انبار</TabsTrigger>
+    49→          <TabsTrigger value="guests">مهمان‌ها</TabsTrigger>
+    50→          <TabsTrigger value="events">رویدادها</TabsTrigger>
+    51→        </TabsList>
+    52→        <TabsContent value="transport" className="mt-3">
+    53→          <TransportTab canManage={canManage} />
+    54→        </TabsContent>
+    55→        <TabsContent value="inventory" className="mt-3">
+    56→          <InventoryTab canManage={canManage} />
+    57→        </TabsContent>
+    58→        <TabsContent value="guests" className="mt-3">
+    59→          <GuestsTab canManage={canManage} />
+    60→        </TabsContent>
+    61→        <TabsContent value="events" className="mt-3">
+    62→          <EventsTab canManage={canManage} />
+    63→        </TabsContent>
+    64→      </Tabs>
+    65→    </div>
+    66→  );
+    67→}
+    68→
+    69→// ── Transport tab ───────────────────────────────────────────────────────────
+    70→
+    71→function TransportTab({ canManage }: { canManage: boolean }) {
+    72→  const [createOpen, setCreateOpen] = useState(false);
+    73→  const [addPassengerRouteId, setAddPassengerRouteId] = useState<string | null>(null);
+    74→  const { data: routes, isLoading } = useTransportRoutes();
+    75→  const activeRoutes = (routes ?? []).filter((r) => r.isActive);
+    76→  const totalSeats = activeRoutes.reduce((s, r) => s + r.capacity, 0);
+    77→  const totalPassengers = activeRoutes.reduce((s, r) => s + r.activePassengers, 0);
+    78→
+    79→  return (
+    80→    <div className="space-y-4">
+    81→      <div className="grid gap-3 sm:grid-cols-3">
+    82→        <KpiCard label="مسیرهای فعال" value={faNum(activeRoutes.length)} icon={Bus} />
+    83→        <KpiCard label="ظرفیت مجموع" value={faNum(totalSeats)} icon={Bus} tone="primary" />
+    84→        <KpiCard label="مسافران فعال" value={faNum(totalPassengers)} icon={UserCheck} tone="amber" />
+    85→      </div>
+    86→
+    87→      <Card>
+    88→        <CardContent className="p-0">
+    89→          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+    90→            <span className="text-sm font-semibold">مسیرهای ترانسپورت</span>
+    91→            {canManage ? (
+    92→              <div className="ms-auto">
+    93→                <Button onClick={() => setCreateOpen(true)}>
+    94→                  <Plus className="h-4 w-4" /> مسیر جدید
+    95→                </Button>
+    96→              </div>
+    97→            ) : null}
+    98→          </div>
+    99→
+   100→          {isLoading ? (
+   101→            <div className="p-4"><TableSkeleton rows={4} cols={6} /></div>
+   102→          ) : (routes ?? []).length === 0 ? (
+   103→            <div className="p-6">
+   104→              <EmptyState icon={Bus} title="مسیری ثبت نشده است" body={canManage ? "اولین مسیر ترانسپورت شعبه را ثبت کنید." : undefined} />
+   105→            </div>
+   106→          ) : (
+   107→            <div className="overflow-x-auto">
+   108→              <Table>
+   109→                <TableHeader>
+   110→                  <TableRow>
+   111→                    <TableHead>نام مسیر</TableHead>
+   112→                    <TableHead>راننده</TableHead>
+   113→                    <TableHead>وسیله</TableHead>
+   114→                    <TableHead>مسافران / ظرفیت</TableHead>
+   115→                    <TableHead>فیس ماهانه</TableHead>
+   116→                    <TableHead>وضعیت</TableHead>
+   117→                    {canManage ? <TableHead className="w-32">عملیات</TableHead> : null}
+   118→                  </TableRow>
+   119→                </TableHeader>
+   120→                <TableBody>
+   121→                  {(routes ?? []).map((r) => (
+   122→                    <TableRow key={r.id} className={r.isActive ? "" : "opacity-60"}>
+   123→                      <TableCell className="font-medium">{r.name}</TableCell>
+   124→                      <TableCell className="text-muted-foreground">{r.driverName ?? "—"}</TableCell>
+   125→                      <TableCell className="text-muted-foreground">{r.vehicle ?? "—"}</TableCell>
+   126→                      <TableCell className="tabular-nums">
+   127→                        {faNum(r.activePassengers)} / {faNum(r.capacity)}
+   128→                      </TableCell>
+   129→                      <TableCell className="tabular-nums">{r.monthlyFeeDiram > 0 ? faMoneyNum(r.monthlyFeeDiram) : "—"}</TableCell>
+   130→                      <TableCell>
+   131→                        <FinBadge status={r.isActive ? "active" : "inactive"} label={r.isActive ? "فعال" : "غیرفعال"} />
+   132→                      </TableCell>
+   133→                      {canManage ? (
+   134→                        <TableCell className="space-x-1 space-x-reverse">
+   135→                          {r.isActive ? (
+   136→                            <>
+   137→                              <Button variant="ghost" size="sm" onClick={() => setAddPassengerRouteId(r.id)}>
+   138→                                <Plus className="h-3.5 w-3.5" /> مسافر
+   139→                              </Button>
+   140→                              <DeactivateRouteButton id={r.id} />
+   141→                            </>
+   142→                          ) : null}
+   143→                        </TableCell>
+   144→                      ) : null}
+   145→                    </TableRow>
+   146→                  ))}
+   147→                </TableBody>
+   148→              </Table>
+   149→            </div>
+   150→          )}
+   151→        </CardContent>
+   152→      </Card>
+   153→
+   154→      <PassengersTable />
+   155→
+   156→      {createOpen ? <CreateRouteDialog open onOpenChange={setCreateOpen} /> : null}
+   157→      {addPassengerRouteId ? (
+   158→        <AddPassengerDialog routeId={addPassengerRouteId} onClose={() => setAddPassengerRouteId(null)} />
+   159→      ) : null}
+   160→    </div>
+   161→  );
+   162→}
+   163→
+   164→function DeactivateRouteButton({ id }: { id: string }) {
+   165→  const update = useUpdateTransportRoute();
+   166→  return (
+   167→    <Button
+   168→      variant="ghost"
+   169→      size="sm"
+   170→      className="text-destructive hover:text-destructive"
+   171→      disabled={update.isPending}
+   172→      onClick={async () => {
+   173→        try {
+   174→          await update.mutateAsync({ id, isActive: false });
+   175→          toast.success("مسیر غیرفعال شد.");
+   176→        } catch (err) {
+   177→          toast.error(apiErrorMessage(err));
+   178→        }
+   179→      }}
+   180→    >
+   181→      توقف
+   182→    </Button>
+   183→  );
+   184→}
+   185→
+   186→function PassengersTable() {
+   187→  const [routeId, setRouteId] = useState("");
+   188→  const update = useUpdateTransportPassenger();
+   189→  const { data: routes } = useTransportRoutes();
+   190→  const { data: passengers, isLoading } = useTransportPassengers({
+   191→    routeId: routeId || undefined,
+   192→    status: "active",
+   193→  });
+   194→
+   195→  return (
+   196→    <Card>
+   197→      <CardContent className="p-0">
+   198→        <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+   199→          <span className="text-sm font-semibold">مسافران فعال</span>
+   200→          <Select value={routeId || "all"} onValueChange={(v) => setRouteId(v === "all" ? "" : v)}>
+   201→            <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+   202→            <SelectContent>
+   203→              <SelectItem value="all">همه مسیرها</SelectItem>
+   204→              {(routes ?? []).filter((r) => r.isActive).map((r) => (
+   205→                <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+   206→              ))}
+   207→            </SelectContent>
+   208→          </Select>
+   209→        </div>
+   210→        {isLoading ? (
+   211→          <div className="p-4"><TableSkeleton rows={4} cols={5} /></div>
+   212→        ) : (passengers ?? []).length === 0 ? (
+   213→          <div className="p-6"><EmptyState icon={UserCheck} title="مسافری ثبت نشده است" /></div>
+   214→        ) : (
+   215→          <div className="overflow-x-auto">
+   216→            <Table>
+   217→              <TableHeader>
+   218→                <TableRow>
+   219→                  <TableHead>شاگرد</TableHead>
+   220→                  <TableHead>مسیر</TableHead>
+   221→                  <TableHead>ایستگاه</TableHead>
+   222→                  <TableHead>وضعیت</TableHead>
+   223→                  <TableHead className="w-24">عملیات</TableHead>
+   224→                </TableRow>
+   225→              </TableHeader>
+   226→              <TableBody>
+   227→                {(passengers ?? []).map((p) => (
+   228→                  <TableRow key={p.id}>
+   229→                    <TableCell>
+   230→                      <span className="font-medium">{p.studentName}</span>{" "}
+   231→                      <span className="text-xs text-muted-foreground">({p.studentNumber})</span>
+   232→                    </TableCell>
+   233→                    <TableCell>{p.routeName}</TableCell>
+   234→                    <TableCell className="text-muted-foreground">{p.stopName ?? "—"}</TableCell>
+   235→                    <TableCell>
+   236→                      <FinBadge status={p.status === "active" ? "active" : "inactive"} label={p.statusLabel} />
+   237→                    </TableCell>
+   238→                    <TableCell>
+   239→                      {p.status === "active" ? (
+   240→                        <Button
+   241→                          variant="ghost"
+   242→                          size="sm"
+   243→                          className="text-destructive hover:text-destructive"
+   244→                          disabled={update.isPending}
+   245→                          onClick={async () => {
+   246→                            try {
+   247→                              await update.mutateAsync({ id: p.id, status: "stopped" });
+   248→                              toast.success("مسافر توقف داده شد.");
+   249→                            } catch (err) {
+   250→                              toast.error(apiErrorMessage(err));
+   251→                            }
+   252→                          }}
+   253→                        >
+   254→                          توقف
+   255→                        </Button>
+   256→                      ) : null}
+   257→                    </TableCell>
+   258→                  </TableRow>
+   259→                ))}
+   260→              </TableBody>
+   261→            </Table>
+   262→          </div>
+   263→        )}
+   264→      </CardContent>
+   265→    </Card>
+   266→  );
+   267→}
+   268→
+   269→function CreateRouteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+   270→  const create = useCreateTransportRoute();
+   271→  const [name, setName] = useState("");
+   272→  const [driverName, setDriverName] = useState("");
+   273→  const [vehicle, setVehicle] = useState("");
+   274→  const [capacity, setCapacity] = useState("20");
+   275→  const [feeAfn, setFeeAfn] = useState("");
+   276→  const [stops, setStops] = useState("");
+   277→  const [note, setNote] = useState("");
+   278→
+   279→  const cap = Number(capacity.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))));
+   280→  const feeDiram = feeAfn.trim()
+   281→    ? Math.round(Number(feeAfn.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[,٬،\s]/g, "")) * 100)
+   282→    : 0;
+   283→  const valid = name.trim().length >= 3 && Number.isInteger(cap) && cap >= 1 && cap <= 80;
+   284→
+   285→  return (
+   286→    <Dialog open={open} onOpenChange={onOpenChange}>
+   287→      <DialogContent dir="rtl" className="max-w-lg">
+   288→        <DialogHeader>
+   289→          <DialogTitle>مسیر ترانسپورت جدید</DialogTitle>
+   290→          <DialogDescription>مسیر در شعبهٔ فعال شما ثبت می‌شود.</DialogDescription>
+   291→        </DialogHeader>
+   292→        <div className="space-y-4">
+   293→          <div className="grid gap-4 sm:grid-cols-2">
+   294→            <div className="space-y-1.5">
+   295→              <Label>نام مسیر</Label>
+   296→              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً: مسیر اول — چهارراهی پرچم" />
+   297→            </div>
+   298→            <div className="space-y-1.5">
+   299→              <Label>راننده (اختیاری)</Label>
+   300→              <Input value={driverName} onChange={(e) => setDriverName(e.target.value)} />
+   301→            </div>
+   302→          </div>
+   303→          <div className="grid gap-4 sm:grid-cols-3">
+   304→            <div className="space-y-1.5">
+   305→              <Label>ظرفیت</Label>
+   306→              <Input dir="ltr" inputMode="numeric" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
+   307→            </div>
+   308→            <div className="space-y-1.5">
+   309→              <Label>فیس ماهانه (افغانی)</Label>
+   310→              <Input dir="ltr" inputMode="decimal" value={feeAfn} onChange={(e) => setFeeAfn(e.target.value)} placeholder="مثلاً 600" />
+   311→            </div>
+   312→            <div className="space-y-1.5">
+   313→              <Label>وسیله (اختیاری)</Label>
+   314→              <Input value={vehicle} onChange={(e) => setVehicle(e.target.value)} />
+   315→            </div>
+   316→          </div>
+   317→          <div className="space-y-1.5">
+   318→            <Label>ایستگاه‌ها (اختیاری — با کاما)</Label>
+   319→            <Input value={stops} onChange={(e) => setStops(e.target.value)} placeholder="مثلاً: پرچم، شahrنو، کارتِ نو" />
+   320→          </div>
+   321→          <div className="space-y-1.5">
+   322→            <Label>یادداشت (اختیاری)</Label>
+   323→            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
+   324→          </div>
+   325→        </div>
+   326→        <DialogFooter>
+   327→          <Button variant="outline" onClick={() => onOpenChange(false)}>لغو</Button>
+   328→          <Button
+   329→            disabled={!valid || create.isPending}
+   330→            onClick={async () => {
+   331→              try {
+   332→                await create.mutateAsync({
+   333→                  name: name.trim(),
+   334→                  driverName: driverName.trim() || null,
+   335→                  vehicle: vehicle.trim() || null,
+   336→                  capacity: cap,
+   337→                  monthlyFeeDiram: Number.isFinite(feeDiram) && feeDiram >= 0 ? feeDiram : 0,
+   338→                  stops: stops.split(/[،,]/).map((s) => s.trim()).filter(Boolean),
+   339→                  note: note.trim() || null,
+   340→                });
+   341→                toast.success("مسیر ثبت شد.");
+   342→                onOpenChange(false);
+   343→                setName(""); setDriverName(""); setVehicle(""); setFeeAfn(""); setStops(""); setNote("");
+   344→              } catch (err) {
+   345→                toast.error(apiErrorMessage(err));
+   346→              }
+   347→            }}
+   348→          >
+   349→            {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ثبت"}
+   350→          </Button>
+   351→        </DialogFooter>
+   352→      </DialogContent>
+   353→    </Dialog>
+   354→  );
+   355→}
+   356→
+   357→function AddPassengerDialog({ routeId, onClose }: { routeId: string; onClose: () => void }) {
+   358→  const add = useAddTransportPassenger();
+   359→  const [q, setQ] = useState("");
+   360→  const [studentId, setStudentId] = useState("");
+   361→  const [stopName, setStopName] = useState("");
+   362→  const { data: students } = useStudents({ q: q || undefined, pageSize: 10 });
+   363→
+   364→  return (
+   365→    <Dialog open onOpenChange={(v) => !v && onClose()}>
+   366→      <DialogContent dir="rtl" className="max-w-md">
+   367→        <DialogHeader>
+   368→          <DialogTitle>افزودن مسافر به مسیر</DialogTitle>
+   369→          <DialogDescription>
+   370→            ظرفیت مسیر در همان تراکنش بررسی می‌شود؛ شاگرد باید در شعبهٔ همین مسیر شمولیت فعال داشته باشد.
+   371→          </DialogDescription>
+   372→        </DialogHeader>
+   373→        <div className="space-y-4">
+   374→          <div className="space-y-1.5">
+   375→            <Label>شاگرد</Label>
+   376→            <div className="relative">
+   377→              <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+   378→              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="جستجوی شاگرد…" className="ps-8" />
+   379→            </div>
+   380→            <Select value={studentId || "none"} onValueChange={(v) => setStudentId(v === "none" ? "" : v)}>
+   381→              <SelectTrigger><SelectValue placeholder="یک شاگرد انتخاب کنید" /></SelectTrigger>
+   382→              <SelectContent>
+   383→                <SelectItem value="none">— انتخاب شاگرد —</SelectItem>
+   384→                {(students?.items ?? []).map((s) => (
+   385→                  <SelectItem key={s.id} value={s.id}>
+   386→                    {s.personal.firstName ?? "—"} {s.personal.fatherName ?? ""} ({s.studentNumber})
+   387→                  </SelectItem>
+   388→                ))}
+   389→              </SelectContent>
+   390→            </Select>
+   391→          </div>
+   392→          <div className="space-y-1.5">
+   393→            <Label>ایستگاه (اختیاری)</Label>
+   394→            <Input value={stopName} onChange={(e) => setStopName(e.target.value)} />
+   395→          </div>
+   396→        </div>
+   397→        <DialogFooter>
+   398→          <Button variant="outline" onClick={onClose}>لغو</Button>
+   399→          <Button
+   400→            disabled={!studentId || add.isPending}
+   401→            onClick={async () => {
+   402→              try {
+   403→                await add.mutateAsync({ routeId, studentId, stopName: stopName.trim() || null });
+   404→                toast.success("مسافر ثبت شد.");
+   405→                onClose();
+   406→              } catch (err) {
+   407→                toast.error(apiErrorMessage(err));
+   408→              }
+   409→            }}
+   410→          >
+   411→            {add.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "افزودن"}
+   412→          </Button>
+   413→        </DialogFooter>
+   414→      </DialogContent>
+   415→    </Dialog>
+   416→  );
+   417→}
+   418→
+   419→// ── Inventory tab ───────────────────────────────────────────────────────────
+   420→
+   421→function InventoryTab({ canManage }: { canManage: boolean }) {
+   422→  const [createOpen, setCreateOpen] = useState(false);
+   423→  const [moveItemId, setMoveItemId] = useState<string | null>(null);
+   424→  const { data: items, isLoading } = useInventoryItems();
+   425→  const lowCount = (items ?? []).filter((i) => i.isLow).length;
+   426→
+   427→  return (
+   428→    <div className="space-y-4">
+   429→      <div className="grid gap-3 sm:grid-cols-3">
+   430→        <KpiCard label="اقلام انبار" value={faNum((items ?? []).length)} icon={Package} />
+   431→        <KpiCard label="اقلام کم‌موجود" value={faNum(lowCount)} icon={PackageX} tone={lowCount > 0 ? "amber" : "primary"} />
+   432→        <KpiCard
+   433→          label="مجموع موجودی"
+   434→          value={faNum((items ?? []).reduce((s, i) => s + i.quantity, 0))}
+   435→          icon={Package}
+   436→          tone="primary"
+   437→        />
+   438→      </div>
+   439→
+   440→      <Card>
+   441→        <CardContent className="p-0">
+   442→          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+   443→            <span className="text-sm font-semibold">اقلام انبار (شعبهٔ فعال)</span>
+   444→            {canManage ? (
+   445→              <div className="ms-auto flex gap-2">
+   446→                <Button onClick={() => setCreateOpen(true)}>
+   447→                  <Plus className="h-4 w-4" /> قلم جدید
+   448→                </Button>
+   449→              </div>
+   450→            ) : null}
+   451→          </div>
+   452→          {isLoading ? (
+   453→            <div className="p-4"><TableSkeleton rows={5} cols={5} /></div>
+   454→          ) : (items ?? []).length === 0 ? (
+   455→            <div className="p-6"><EmptyState icon={Package} title="قلمی ثبت نشده است" body={canManage ? "اولین قلم انبار را ثبت کنید." : undefined} /></div>
+   456→          ) : (
+   457→            <div className="overflow-x-auto">
+   458→              <Table>
+   459→                <TableHeader>
+   460→                  <TableRow>
+   461→                    <TableHead>نام قلم</TableHead>
+   462→                    <TableHead>واحد</TableHead>
+   463→                    <TableHead>موجودی</TableHead>
+   464→                    <TableHead>حداقل</TableHead>
+   465→                    <TableHead>وضعیت</TableHead>
+   466→                    {canManage ? <TableHead className="w-40">عملیات</TableHead> : null}
+   467→                  </TableRow>
+   468→                </TableHeader>
+   469→                <TableBody>
+   470→                  {(items ?? []).map((i) => (
+   471→                    <TableRow key={i.id}>
+   472→                      <TableCell className="font-medium">{i.name}</TableCell>
+   473→                      <TableCell className="text-muted-foreground">{i.unit}</TableCell>
+   474→                      <TableCell className={`tabular-nums font-semibold ${i.isLow ? "text-amber-700" : ""}`}>{faNum(i.quantity)}</TableCell>
+   475→                      <TableCell className="tabular-nums text-muted-foreground">{faNum(i.minQuantity)}</TableCell>
+   476→                      <TableCell>
+   477→                        <FinBadge status={i.isLow ? "issued" : "active"} label={i.isLow ? "کم‌موجود" : "نرمال"} />
+   478→                      </TableCell>
+   479→                      {canManage ? (
+   480→                        <TableCell>
+   481→                          <Button variant="ghost" size="sm" onClick={() => setMoveItemId(i.id)}>
+   482→                            <ArrowDownUp className="h-3.5 w-3.5" /> ورود/صرف
+   483→                          </Button>
+   484→                        </TableCell>
+   485→                      ) : null}
+   486→                    </TableRow>
+   487→                  ))}
+   488→                </TableBody>
+   489→              </Table>
+   490→            </div>
+   491→          )}
+   492→        </CardContent>
+   493→      </Card>
+   494→
+   495→      {createOpen ? <CreateItemDialog open onOpenChange={setCreateOpen} /> : null}
+   496→      {moveItemId ? <MovementDialog itemId={moveItemId} onClose={() => setMoveItemId(null)} /> : null}
+   497→    </div>
+   498→  );
+   499→}
+   500→
+   501→function CreateItemDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+   502→  const create = useCreateInventoryItem();
+   503→  const [name, setName] = useState("");
+   504→  const [unit, setUnit] = useState("عدد");
+   505→  const [minQuantity, setMinQuantity] = useState("0");
+   506→  const [note, setNote] = useState("");
+   507→  const min = Number(minQuantity.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))));
+   508→
+   509→  return (
+   510→    <Dialog open={open} onOpenChange={onOpenChange}>
+   511→      <DialogContent dir="rtl" className="max-w-md">
+   512→        <DialogHeader>
+   513→          <DialogTitle>قلم انبار جدید</DialogTitle>
+   514→          <DialogDescription>قلم با موجودی صفر ثبت می‌شود؛ موجودی با «ورود» در همان تراکنش افزوده می‌شود.</DialogDescription>
+   515→        </DialogHeader>
+   516→        <div className="space-y-4">
+   517→          <div className="space-y-1.5">
+   518→            <Label>نام قلم</Label>
+   519→            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً: تخته‌سپیده" />
+   520→          </div>
+   521→          <div className="grid gap-4 sm:grid-cols-2">
+   522→            <div className="space-y-1.5">
+   523→              <Label>واحد</Label>
+   524→              <Select value={unit} onValueChange={setUnit}>
+   525→                <SelectTrigger><SelectValue /></SelectTrigger>
+   526→                <SelectContent>
+   527→                  {["عدد", "بسته", "لیتر", "کیلو", "متر"].map((u) => (
+   528→                    <SelectItem key={u} value={u}>{u}</SelectItem>
+   529→                  ))}
+   530→                </SelectContent>
+   531→              </Select>
+   532→            </div>
+   533→            <div className="space-y-1.5">
+   534→              <Label>حداقل موجودی</Label>
+   535→              <Input dir="ltr" inputMode="numeric" value={minQuantity} onChange={(e) => setMinQuantity(e.target.value)} />
+   536→            </div>
+   537→          </div>
+   538→          <div className="space-y-1.5">
+   539→            <Label>یادداشت (اختیاری)</Label>
+   540→            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
+   541→          </div>
+   542→        </div>
+   543→        <DialogFooter>
+   544→          <Button variant="outline" onClick={() => onOpenChange(false)}>لغو</Button>
+   545→          <Button
+   546→            disabled={name.trim().length < 2 || create.isPending || !Number.isFinite(min) || min < 0}
+   547→            onClick={async () => {
+   548→              try {
+   549→                await create.mutateAsync({
+   550→                  name: name.trim(),
+   551→                  unit,
+   552→                  minQuantity: Number.isFinite(min) ? min : 0,
+   553→                  note: note.trim() || null,
+   554→                });
+   555→                toast.success("قلم ثبت شد.");
+   556→                onOpenChange(false);
+   557→                setName(""); setNote("");
+   558→              } catch (err) {
+   559→                toast.error(apiErrorMessage(err));
+   560→              }
+   561→            }}
+   562→          >
+   563→            {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ثبت"}
+   564→          </Button>
+   565→        </DialogFooter>
+   566→      </DialogContent>
+   567→    </Dialog>
+   568→  );
+   569→}
+   570→
+   571→function MovementDialog({ itemId, onClose }: { itemId: string; onClose: () => void }) {
+   572→  const record = useRecordInventoryMovement();
+   573→  const { data: movements } = useInventoryMovements(itemId);
+   574→  const { data: items } = useInventoryItems();
+   575→  const item = (items ?? []).find((i) => i.id === itemId);
+   576→  const [delta, setDelta] = useState("");
+   577→  const [reason, setReason] = useState("");
+   578→
+   579→  const n = Number(delta.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[,٬،\s]/g, ""));
+   580→  const isReceive = Number.isFinite(n) && n > 0;
+   581→  const isIssue = Number.isFinite(n) && n < 0;
+   582→  const valid = (isReceive || isIssue) && reason.trim().length >= 3;
+   583→
+   584→  return (
+   585→    <Dialog open onOpenChange={(v) => !v && onClose()}>
+   586→      <DialogContent dir="rtl" className="max-w-md">
+   587→        <DialogHeader>
+   588→          <DialogTitle>ورود / صرف موجودی — {item?.name ?? "…"}</DialogTitle>
+   589→          <DialogDescription>
+   590→            مقدار مثبت = ورود به انبار، منفی = صرف. موجودی منفی در همان تراکنش رد می‌شود.
+   591→          </DialogDescription>
+   592→        </DialogHeader>
+   593→        <div className="space-y-4">
+   594→          <div className="grid gap-4 sm:grid-cols-2">
+   595→            <div className="space-y-1.5">
+   596→              <Label>مقدار (مثبت/منفی)</Label>
+   597→              <Input dir="ltr" value={delta} onChange={(e) => setDelta(e.target.value)} placeholder="مثلاً 50 یا -20" />
+   598→            </div>
+   599→            <div className="space-y-1.5">
+   600→              <Label>موجودی فعلی</Label>
+   601→              <div className="rounded-md bg-muted/50 px-3 py-2 text-sm tabular-nums">
+   602→                {item ? `${faNum(item.quantity)} ${item.unit}` : "—"}
+   603→              </div>
+   604→            </div>
+   605→          </div>
+   606→          <div className="space-y-1.5">
+   607→            <Label>دلیل</Label>
+   608→            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="مثلاً: خرید از بازار / توزیع به صنف پنجم" />
+   609→          </div>
+   610→          {(movements ?? []).length > 0 ? (
+   611→            <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border p-2">
+   612→              {(movements ?? []).slice(0, 10).map((m) => (
+   613→                <div key={m.id} className="flex items-center justify-between text-xs">
+   614→                  <span className={m.delta > 0 ? "text-emerald-700" : "text-red-700"}>
+   615→                    {m.delta > 0 ? "+" : ""}{faNum(m.delta)} — {m.reason}
+   616→                  </span>
+   617→                  <span className="text-muted-foreground">{formatInstantJalaliDateTime(m.at)}</span>
+   618→                </div>
+   619→              ))}
+   620→            </div>
+   621→          ) : null}
+   622→        </div>
+   623→        <DialogFooter>
+   624→          <Button variant="outline" onClick={onClose}>بستن</Button>
+   625→          <Button
+   626→            disabled={!valid || record.isPending}
+   627→            onClick={async () => {
+   628→              try {
+   629→                await record.mutateAsync({ itemId, delta: n, reason: reason.trim() });
+   630→                toast.success("حرکت موجودی ثبت شد.");
+   631→                setDelta(""); setReason("");
+   632→              } catch (err) {
+   633→                toast.error(apiErrorMessage(err));
+   634→              }
+   635→            }}
+   636→          >
+   637→            {record.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ثبت حرکت"}
+   638→          </Button>
+   639→        </DialogFooter>
+   640→      </DialogContent>
+   641→    </Dialog>
+   642→  );
+   643→}
+   644→
+   645→// ── Guests tab ──────────────────────────────────────────────────────────────
+   646→
+   647→function GuestsTab({ canManage }: { canManage: boolean }) {
+   648→  const [createOpen, setCreateOpen] = useState(false);
+   649→  const [inside, setInside] = useState("true");
+   650→  const checkout = useCheckoutGuest();
+   651→  const { data: guests, isLoading } = useGuestVisits({ inside: inside || undefined });
+   652→
+   653→  return (
+   654→    <div className="space-y-4">
+   655→      <Card>
+   656→        <CardContent className="p-0">
+   657→          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+   658→            <span className="text-sm font-semibold">ثبت مهمان‌ها</span>
+   659→            <Select value={inside} onValueChange={setInside}>
+   660→              <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+   661→              <SelectContent>
+   662→                <SelectItem value="true">داخل مکتب</SelectItem>
+   663→                <SelectItem value="false">خارج‌شده</SelectItem>
+   664→                <SelectItem value="">همه</SelectItem>
+   665→              </SelectContent>
+   666→            </Select>
+   667→            {canManage ? (
+   668→              <div className="ms-auto">
+   669→                <Button onClick={() => setCreateOpen(true)}>
+   670→                  <Plus className="h-4 w-4" /> ورود مهمان
+   671→                </Button>
+   672→              </div>
+   673→            ) : null}
+   674→          </div>
+   675→          {isLoading ? (
+   676→            <div className="p-4"><TableSkeleton rows={4} cols={5} /></div>
+   677→          ) : (guests ?? []).length === 0 ? (
+   678→            <div className="p-6"><EmptyState icon={UserCheck} title="مهمانی ثبت نشده است" /></div>
+   679→          ) : (
+   680→            <div className="overflow-x-auto">
+   681→              <Table>
+   682→                <TableHeader>
+   683→                  <TableRow>
+   684→                    <TableHead>نام مهمان</TableHead>
+   685→                    <TableHead>هدف</TableHead>
+   686→                    <TableHead>میزبان</TableHead>
+   687→                    <TableHead>تعداد</TableHead>
+   688→                    <TableHead>زمان ورود</TableHead>
+   689→                    <TableHead>زمان خروج</TableHead>
+   690→                    {canManage ? <TableHead className="w-24">عملیات</TableHead> : null}
+   691→                  </TableRow>
+   692→                </TableHeader>
+   693→                <TableBody>
+   694→                  {(guests ?? []).map((g) => (
+   695→                    <TableRow key={g.id}>
+   696→                      <TableCell className="font-medium">{g.fullName}</TableCell>
+   697→                      <TableCell className="text-muted-foreground">{g.purpose}</TableCell>
+   698→                      <TableCell className="text-muted-foreground">{g.hostName ?? "—"}</TableCell>
+   699→                      <TableCell className="tabular-nums">{faNum(g.visitorCount)}</TableCell>
+   700→                      <TableCell className="text-muted-foreground">{formatInstantJalaliDateTime(g.arrivedAt)}</TableCell>
+   701→                      <TableCell className="text-muted-foreground">
+   702→                        {g.leftAt ? formatInstantJalaliDateTime(g.leftAt) : <FinBadge status="active" label="داخل مکتب" />}
+   703→                      </TableCell>
+   704→                      {canManage ? (
+   705→                        <TableCell>
+   706→                          {g.isInside ? (
+   707→                            <Button
+   708→                              variant="ghost"
+   709→                              size="sm"
+   710→                              disabled={checkout.isPending}
+   711→                              onClick={async () => {
+   712→                                try {
+   713→                                  await checkout.mutateAsync({ id: g.id });
+   714→                                  toast.success("خروج ثبت شد.");
+   715→                                } catch (err) {
+   716→                                  toast.error(apiErrorMessage(err));
+   717→                                }
+   718→                              }}
+   719→                            >
+   720→                              ثبت خروج
+   721→                            </Button>
+   722→                          ) : null}
+   723→                        </TableCell>
+   724→                      ) : null}
+   725→                    </TableRow>
+   726→                  ))}
+   727→                </TableBody>
+   728→              </Table>
+   729→            </div>
+   730→          )}
+   731→        </CardContent>
+   732→      </Card>
+   733→
+   734→      {createOpen ? <CreateGuestDialog open onOpenChange={setCreateOpen} /> : null}
+   735→    </div>
+   736→  );
+   737→}
+   738→
+   739→function CreateGuestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+   740→  const create = useCreateGuestVisit();
+   741→  const [fullName, setFullName] = useState("");
+   742→  const [purpose, setPurpose] = useState("");
+   743→  const [hostName, setHostName] = useState("");
+   744→  const [idNumber, setIdNumber] = useState("");
+   745→  const [visitorCount, setVisitorCount] = useState("1");
+   746→  const [note, setNote] = useState("");
+   747→  const count = Number(visitorCount.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))));
+   748→  const valid = fullName.trim().length >= 3 && purpose.trim().length >= 3 && Number.isInteger(count) && count >= 1 && count <= 20;
+   749→
+   750→  return (
+   751→    <Dialog open={open} onOpenChange={onOpenChange}>
+   752→      <DialogContent dir="rtl" className="max-w-md">
+   753→        <DialogHeader>
+   754→          <DialogTitle>ثبت ورود مهمان</DialogTitle>
+   755→          <DialogDescription>زمان ورود به‌صورت خودکار ثبت می‌شود.</DialogDescription>
+   756→        </DialogHeader>
+   757→        <div className="space-y-4">
+   758→          <div className="grid gap-4 sm:grid-cols-2">
+   759→            <div className="space-y-1.5">
+   760→              <Label>نام مهمان</Label>
+   761→              <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+   762→            </div>
+   763→            <div className="space-y-1.5">
+   764→              <Label>تعداد افراد</Label>
+   765→              <Input dir="ltr" inputMode="numeric" value={visitorCount} onChange={(e) => setVisitorCount(e.target.value)} />
+   766→            </div>
+   767→          </div>
+   768→          <div className="space-y-1.5">
+   769→            <Label>هدف از آمدن</Label>
+   770→            <Input value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="مثلاً: ملاقات مدیر" />
+   771→          </div>
+   772→          <div className="grid gap-4 sm:grid-cols-2">
+   773→            <div className="space-y-1.5">
+   774→              <Label>میزبان (اختیاری)</Label>
+   775→              <Input value={hostName} onChange={(e) => setHostName(e.target.value)} />
+   776→            </div>
+   777→            <div className="space-y-1.5">
+   778→              <Label>شمارهٔ تذکره (اختیاری)</Label>
+   779→              <Input dir="ltr" value={idNumber} onChange={(e) => setIdNumber(e.target.value)} />
+   780→            </div>
+   781→          </div>
+   782→          <div className="space-y-1.5">
+   783→            <Label>یادداشت (اختیاری)</Label>
+   784→            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
+   785→          </div>
+   786→        </div>
+   787→        <DialogFooter>
+   788→          <Button variant="outline" onClick={() => onOpenChange(false)}>لغو</Button>
+   789→          <Button
+   790→            disabled={!valid || create.isPending}
+   791→            onClick={async () => {
+   792→              try {
+   793→                await create.mutateAsync({
+   794→                  fullName: fullName.trim(),
+   795→                  purpose: purpose.trim(),
+   796→                  hostName: hostName.trim() || null,
+   797→                  idNumber: idNumber.trim() || null,
+   798→                  visitorCount: count,
+   799→                  note: note.trim() || null,
+   800→                });
+   801→                toast.success("ورود مهمان ثبت شد.");
+   802→                onOpenChange(false);
+   803→                setFullName(""); setPurpose(""); setHostName(""); setIdNumber(""); setNote("");
+   804→              } catch (err) {
+   805→                toast.error(apiErrorMessage(err));
+   806→              }
+   807→            }}
+   808→          >
+   809→            {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ثبت"}
+   810→          </Button>
+   811→        </DialogFooter>
+   812→      </DialogContent>
+   813→    </Dialog>
+   814→  );
+   815→}
+   816→
+   817→// ── Events tab ──────────────────────────────────────────────────────────────
+   818→
+   819→function EventsTab({ canManage }: { canManage: boolean }) {
+   820→  const [createOpen, setCreateOpen] = useState(false);
+   821→  const { data: events, isLoading } = useSchoolEvents();
+   822→
+   823→  return (
+   824→    <div className="space-y-4">
+   825→      <Card>
+   826→        <CardContent className="p-0">
+   827→          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+   828→            <span className="text-sm font-semibold">تقویم رویدادها</span>
+   829→            <span className="text-xs text-muted-foreground">
+   830→              رویدادهای «همه شعبه‌ها» برای هر شعبه‌ای قابل‌مشاهده‌اند.
+   831→            </span>
+   832→            {canManage ? (
+   833→              <div className="ms-auto">
+   834→                <Button onClick={() => setCreateOpen(true)}>
+   835→                  <Plus className="h-4 w-4" /> رویداد جدید
+   836→                </Button>
+   837→              </div>
+   838→            ) : null}
+   839→          </div>
+   840→          {isLoading ? (
+   841→            <div className="p-4"><TableSkeleton rows={4} cols={5} /></div>
+   842→          ) : (events ?? []).length === 0 ? (
+   843→            <div className="p-6"><EmptyState icon={CalendarDays} title="رویدادی ثبت نشده است" body={canManage ? "اولین رویداد را ثبت کنید." : undefined} /></div>
+   844→          ) : (
+   845→            <div className="overflow-x-auto">
+   846→              <Table>
+   847→                <TableHeader>
+   848→                  <TableRow>
+   849→                    <TableHead>عنوان</TableHead>
+   850→                    <TableHead>نوع</TableHead>
+   851→                    <TableHead>شروع</TableHead>
+   852→                    <TableHead>ختم</TableHead>
+   853→                    <TableHead>حیطه</TableHead>
+   854→                  </TableRow>
+   855→                </TableHeader>
+   856→                <TableBody>
+   857→                  {(events ?? []).map((e) => (
+   858→                    <TableRow key={e.id}>
+   859→                      <TableCell className="font-medium">{e.title}</TableCell>
+   860→                      <TableCell><FinBadge status="approved" label={e.kindLabel} /></TableCell>
+   861→                      <TableCell className="text-muted-foreground">{faDate(e.startsOn)}</TableCell>
+   862→                      <TableCell className="text-muted-foreground">{e.endsOn ? faDate(e.endsOn) : "—"}</TableCell>
+   863→                      <TableCell className="text-muted-foreground">
+   864→                        {e.branchId ? "این شعبه" : "همه شعبه‌ها"}
+   865→                      </TableCell>
+   866→                    </TableRow>
+   867→                  ))}
+   868→                </TableBody>
+   869→              </Table>
+   870→            </div>
+   871→          )}
+   872→        </CardContent>
+   873→      </Card>
+   874→
+   875→      {createOpen ? <CreateEventDialog open onOpenChange={setCreateOpen} /> : null}
+   876→    </div>
+   877→  );
+   878→}
+   879→
+   880→function CreateEventDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+   881→  const create = useCreateSchoolEvent();
+   882→  const { data: me } = useMe();
+   883→  const { data: orgCtx } = useOrgContext();
+   884→  const isCrossBranch =
+   885→    hasGrant(me, "services.manage") &&
+   886→    (me?.roles ?? []).some((r) => r === "admin" || r === "general_manager");
+   887→  const [title, setTitle] = useState("");
+   888→  const [kind, setKind] = useState("meeting");
+   889→  const [startsOn, setStartsOn] = useState("");
+   890→  const [endsOn, setEndsOn] = useState("");
+   891→  const [scope, setScope] = useState("own");
+   892→  const [note, setNote] = useState("");
+   893→
+   894→  const valid = title.trim().length >= 3 && startsOn.length >= 8;
+   895→
+   896→  return (
+   897→    <Dialog open={open} onOpenChange={onOpenChange}>
+   898→      <DialogContent dir="rtl" className="max-w-md">
+   899→        <DialogHeader>
+   900→          <DialogTitle>رویداد جدید</DialogTitle>
+   901→          <DialogDescription>
+   902→            رویداد در تقویم شعبه ثبت می‌شود؛ مدیر سیستم و مدیر عام می‌توانند رویداد «همه شعبه‌ها» ثبت کنند.
+   903→          </DialogDescription>
+   904→        </DialogHeader>
+   905→        <div className="space-y-4">
+   906→          <div className="space-y-1.5">
+   907→            <Label>عنوان</Label>
+   908→            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: امتحانات میان‌ترم" />
+   909→          </div>
+   910→          <div className="grid gap-4 sm:grid-cols-2">
+   911→            <div className="space-y-1.5">
+   912→              <Label>نوع</Label>
+   913→              <Select value={kind} onValueChange={setKind}>
+   914→                <SelectTrigger><SelectValue /></SelectTrigger>
+   915→                <SelectContent>
+   916→                  {EVENT_KINDS.map((k) => (
+   917→                    <SelectItem key={k.value} value={k.value}>{k.label}</SelectItem>
+   918→                  ))}
+   919→                </SelectContent>
+   920→              </Select>
+   921→            </div>
+   922→            {isCrossBranch && (orgCtx?.branches ?? []).length > 1 ? (
+   923→              <div className="space-y-1.5">
+   924→                <Label>حیطه</Label>
+   925→                <Select value={scope} onValueChange={setScope}>
+   926→                  <SelectTrigger><SelectValue /></SelectTrigger>
+   927→                  <SelectContent>
+   928→                    <SelectItem value="own">شعبهٔ فعال</SelectItem>
+   929→                    <SelectItem value="org">همه شعبه‌ها</SelectItem>
+   930→                  </SelectContent>
+   931→                </Select>
+   932→              </div>
+   933→            ) : null}
+   934→          </div>
+   935→          <div className="grid gap-4 sm:grid-cols-2">
+   936→            <div className="space-y-1.5">
+   937→              <Label>تاریخ شروع</Label>
+   938→              <JalaliDateInput value={startsOn} onChange={setStartsOn} placeholder="۱۴۰۵/۰۹/۱۰" />
+   939→            </div>
+   940→            <div className="space-y-1.5">
+   941→              <Label>تاریخ ختم (اختیاری)</Label>
+   942→              <JalaliDateInput value={endsOn} onChange={setEndsOn} placeholder="۱۴۰۵/۰۹/۲۰" />
+   943→            </div>
+   944→          </div>
+   945→          <div className="space-y-1.5">
+   946→            <Label>یادداشت (اختیاری)</Label>
+   947→            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
+   948→          </div>
+   949→        </div>
+   950→        <DialogFooter>
+   951→          <Button variant="outline" onClick={() => onOpenChange(false)}>لغو</Button>
+   952→          <Button
+   953→            disabled={!valid || create.isPending}
+   954→            onClick={async () => {
+   955→              try {
+   956→                await create.mutateAsync({
+   957→                  title: title.trim(),
+   958→                  kind,
+   959→                  startsOn,
+   960→                  endsOn: endsOn || null,
+   961→                  // "own" → the viewer's ACTIVE branch context; "org" → null
+   962→                  // (an org-wide event visible to every branch).
+   963→                  branchId: scope === "org" ? null : (me?.branchId ?? undefined),
+   964→                  note: note.trim() || null,
+   965→                });
+   966→                toast.success("رویداد ثبت شد.");
+   967→                onOpenChange(false);
+   968→                setTitle(""); setStartsOn(""); setEndsOn(""); setNote("");
+   969→              } catch (err) {
+   970→                toast.error(apiErrorMessage(err));
+   971→              }
+   972→            }}
+   973→          >
+   974→            {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ثبت"}
+   975→          </Button>
+   976→        </DialogFooter>
+   977→      </DialogContent>
+   978→    </Dialog>
+   979→  );
+   980→}
+   981→

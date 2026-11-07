@@ -646,9 +646,11 @@ function MovementDialog({ itemId, onClose }: { itemId: string; onClose: () => vo
 
 function GuestsTab({ canManage }: { canManage: boolean }) {
   const [createOpen, setCreateOpen] = useState(false);
-  const [inside, setInside] = useState("true");
+  // "all" is a sentinel: Radix Select forbids an empty-string item value
+  // (empty string is reserved for clearing the selection / placeholder).
+  const [inside, setInside] = useState("true"); // "true" | "false" | "all"
   const checkout = useCheckoutGuest();
-  const { data: guests, isLoading } = useGuestVisits({ inside: inside || undefined });
+  const { data: guests, isLoading } = useGuestVisits({ inside: inside === "all" ? undefined : inside });
 
   return (
     <div className="space-y-4">
@@ -661,7 +663,7 @@ function GuestsTab({ canManage }: { canManage: boolean }) {
               <SelectContent>
                 <SelectItem value="true">داخل مکتب</SelectItem>
                 <SelectItem value="false">خارج‌شده</SelectItem>
-                <SelectItem value="">همه</SelectItem>
+                <SelectItem value="all">همه</SelectItem>
               </SelectContent>
             </Select>
             {canManage ? (
