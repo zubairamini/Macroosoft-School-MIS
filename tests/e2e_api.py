@@ -16,7 +16,14 @@ Runs against the live dev server (http://localhost:3000) and exercises:
   6.  Sensitive field restriction (healthNotes hidden without grant)
   7.  Optimistic concurrency (version conflict → 409)
   8.  State machine guard (cannot enroll a draft)
-  9.  CSRF protection (missing client header + foreign origin → 403)
+  9.  CSRF defense (layered, proxy-aware):
+        - header-less cross-site "form" requests (no client header, foreign
+          or missing Origin) → 403
+        - requests WITH the trusted client header pass behind proxies that
+          rewrite Host (Origin ≠ Host) — CSRF-safe for browsers because the
+          API never emits Access-Control-Allow-Origin (preflight never
+          approved)
+        - header-less requests whose Origin matches X-Forwarded-Host pass
   10. Logout revokes session
 
 Usage: python3 tests/e2e_api.py
@@ -287,13 +294,51 @@ def main():
     check("parent search does NOT expose other students",
           not any(h["id"] == student_id for h in hits_p), f"hits={[h['title'] for h in hits_p]}")
 
-    # ── 8. CSRF protection ───────────────────────────────────────────────
-    print("\n[8] CSRF defense")
+    # ── 8. CSRF protection (layered, proxy-aware) ────────────────────────
+    print("\n[8] CSRF defense (layered, proxy-aware)")
+    # (a) "Simple" requests without the trusted client header — the classic
+    #     cross-site form POST vector — are rejected.
     status, body, _ = req("POST", f"/applications/{app['id']}/submit",
                           headers={"x-maktabyar-client": ""}, cookie=admin_cookie)
     check("mutation without client header blocked (403)", status == 403)
-    status, body, _ = req("POST", "/auth/logout", origin="https://evil.example.com", cookie=admin_cookie)
-    check("cross-origin mutation blocked (403)", status == 403)
+    status, body, _ = req("POST", "/auth/login",
+                          {"username": "admin", "password": "Admin1234"},
+                          origin="https://evil.example.com",
+                          headers={"x-maktabyar-client": ""})
+    check("cross-origin form-style mutation (no header) blocked (403)",
+          status == 403)
+    # (b) Requests carrying the trusted client header pass even when a
+    #     reverse proxy rewrote the Host header (Origin ≠ Host) — the
+    #     deployment path for TLS-terminating proxies / preview gateways.
+    tmp_cookie, _ = login("cashier", "Cashier1234")
+    status, body, _ = req("POST", "/auth/logout",
+                          origin="https://preview.example.com",
+                          cookie=tmp_cookie)
+    check("client-header mutation behind Host-rewriting proxy allowed (200)",
+          status == 200)
+    # (c) What makes (b) CSRF-safe for browsers: this API never emits
+    #     Access-Control-Allow-Origin, so a cross-site fetch() carrying a
+    #     custom header can never pass the CORS preflight.
+    r = urllib.request.Request(BASE + "/auth/me", method="GET")
+    r.add_header("x-maktabyar-client", "1")
+    r.add_header("Cookie", admin_cookie)
+    acao = "(no response)"
+    try:
+        with urllib.request.urlopen(r) as resp:
+            acao = resp.headers.get("Access-Control-Allow-Origin")
+    except urllib.error.HTTPError as e:
+        acao = e.headers.get("Access-Control-Allow-Origin")
+    check("API never emits Access-Control-Allow-Origin (no CORS approval)",
+          acao is None, f"acao={acao!r}")
+    # (d) Layer-2 proxy support: header-less requests whose Origin matches
+    #     the X-Forwarded-Host set by the proxy are accepted.
+    status, body, _ = req("POST", "/auth/login",
+                          {"username": "admin", "password": "Admin1234"},
+                          origin="https://portal.example.edu",
+                          headers={"x-maktabyar-client": "",
+                                   "X-Forwarded-Host": "portal.example.edu"})
+    check("header-less request with matching X-Forwarded-Host allowed (200)",
+          status == 200)
 
     # ── 9. Notifications & outbox ────────────────────────────────────────
     print("\n[9] Notifications (outbox fanout)")

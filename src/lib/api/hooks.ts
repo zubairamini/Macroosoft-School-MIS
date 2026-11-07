@@ -403,8 +403,10 @@ export function useUpdateSettings() {
 
 export function apiErrorMessage(err: unknown): string {
   if (err instanceof ApiClientError) {
-    if (err.status === 403) return "شما اجازهٔ انجام این عمل را ندارید.";
-    return err.message;
+    // The API always returns a specific Dari message (permissions, CSRF/origin,
+    // rate limit, validation…) — surface it verbatim so the user sees the real
+    // cause instead of a generic "permission denied" that hides it.
+    return err.message || "شما اجازهٔ انجام این عمل را ندارید.";
   }
   return "خطای غیرمنتظره رخ داد. لطفاً دوباره تلاش کنید.";
 }

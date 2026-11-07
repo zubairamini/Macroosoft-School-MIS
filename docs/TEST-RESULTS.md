@@ -96,12 +96,50 @@ Golden path exercised through the real UI:
 - Console: no errors after fixing a nested-`<li>` hydration warning in
   breadcrumbs.
 
-## 5. Reproduction
+## 5. Post-delivery fix — CSRF origin check behind reverse proxies (2026-11-07)
+
+**Symptom:** logging in through the hosted preview URL always failed with
+«شما اجازهٔ انجام این عمل را ندارید» — `POST /api/v1/auth/login` returned
+403 although the same request worked locally.
+
+**Root cause (two stacked bugs):**
+
+1. `passesOriginCheck` in `src/server/auth/guard.ts` compared the browser's
+   `Origin` only against the `Host` header. Behind the preview gateway the
+   `Host` seen by Next.js differs from the public hostname, so every
+   state-changing request (login POST) was rejected.
+2. `apiErrorMessage` in `src/lib/api/hooks.ts` remapped **every** 403 to
+   «شما اجازهٔ انجام این عمل را ندارید», masking the real
+   CSRF/origin message «درخواست از یک منبع نامعتبر ارسال شده است».
+
+**Fix (layered, proxy-aware, no security regression):**
+
+- Trusted client header `x-maktabyar-client: 1` is now the primary CSRF
+  defense: cross-site HTML forms cannot set custom headers, and a
+  cross-site `fetch()` with a custom header requires a CORS preflight this
+  API never approves (verified: no `Access-Control-Allow-Origin` is ever
+  emitted). Survives proxies that rewrite `Host`.
+- Header-less requests must carry an Origin matching `Host`, any
+  `X-Forwarded-Host` chain entry (default ports normalized), or the new
+  `MAKTABYAR_ALLOWED_ORIGINS` env allowlist.
+- Client now surfaces the server's Dari message verbatim.
+- Rejections log `origin/host/x-forwarded-host` server-side for diagnosis.
+
+**Verification (all real runs):** unit tests 28/28 pass; `tsc --noEmit`
+clean; e2e suite extended from 44 to **47 checks — 47/47 pass**, including
+all six demo-role logins, session cookie flow (login → me → logout → 401),
+full admin API smoke (12 users / 33 sections / 14 audit events), and the
+five CSRF scenarios (form-style cross-site blocked; proxy-rewritten Host
+allowed; no CORS approval ever; X-Forwarded-Host matching). Browser login
+as admin via the UI confirmed: `#/dashboard` renders with full Dari RTL
+navigation, `GET /api/v1/dashboard/summary → 200`.
+
+## 6. Reproduction
 
 ```bash
 bun run typecheck && bun run lint
 bun run test            # 28 unit tests
-bun run test:e2e        # 44 API tests (requires dev server on :3000)
+bun run test:e2e        # 47 API checks (requires dev server on :3000)
 ```
 
 Note: `tests/e2e_api.py` mutates the demo database (creates a test

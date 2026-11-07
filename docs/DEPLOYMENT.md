@@ -8,6 +8,7 @@ Copy `.env.example` → `.env`:
 |---|---|
 | `DATABASE_URL` | SQLite file (sandbox) or PostgreSQL URL (production) |
 | `NODE_ENV` | `development` / `production` |
+| `MAKTABYAR_ALLOWED_ORIGINS` | Optional comma-separated origins/hosts allowed for CSRF validation behind gateways that rewrite `Host` **and** strip custom headers (e.g. `https://school.example.edu, lms.example.edu`) |
 | (P4) `SMS_PROVIDER`, `EMAIL_PROVIDER` | notification adapters |
 | (P4) `STORAGE_*`, `S3_*` | private object storage for documents/photos |
 
@@ -73,7 +74,33 @@ Restore verification checklist (run after every restore drill):
 For PostgreSQL: `pg_dump`/`pg_restore` with the same isolated-restore
 verification; schedule daily backups + weekly restore drills.
 
-## 5. Operational notes
+## 5. Reverse proxies & CSRF origin validation
+
+Every state-changing request (`POST/PUT/PATCH/DELETE`) passes a layered
+origin check in `src/server/auth/guard.ts`:
+
+1. **Trusted client header** — first-party clients (web SPA, future mobile
+   app) always send `x-maktabyar-client: 1`. Cross-site HTML forms cannot set
+   custom headers, and a cross-site `fetch()` with a custom header needs a
+   CORS preflight this API never approves, so the header proves same-origin
+   for browsers. This layer is unaffected by proxies rewriting `Host`.
+2. **Same-origin Origin check** (for header-less requests): `Origin` must
+   match the `Host` header, any `X-Forwarded-Host` chain entry (default ports
+   `:443`/`:80` normalized), or `MAKTABYAR_ALLOWED_ORIGINS`.
+3. Session cookies are `HttpOnly`, `SameSite=Lax` on top of both layers.
+
+Proxy requirements (nginx/Caddy defaults are fine):
+
+- Preserve the original `Host` (`proxy_set_header Host $host;`) **or** set
+  `X-Forwarded-Host` to the public hostname. Caddy preserves `Host` by
+  default; nginx does **not** — add it explicitly.
+- Do not strip the `x-maktabyar-client` request header.
+- A rejected request logs `origin=… host=… x-forwarded-host=…` in the server
+  log (never to the client) — use it to diagnose gateway misconfigurations,
+  then either fix the proxy or add the public origin to
+  `MAKTABYAR_ALLOWED_ORIGINS`.
+
+## 6. Operational notes
 
 - Sessions: 12h absolute / 6h sliding; revocation available per-user
   (password reset revokes all).
