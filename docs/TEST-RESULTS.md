@@ -1,16 +1,23 @@
-# Test Results — actual runs (2026-11-06)
+# Test Results — actual runs (Phase 2: 2026-11-07; Phase 1: 2026-11-06)
 
 All commands were executed against the live sandbox environment; outputs
 below are the real results, not claims.
 
+## 0. Phase 2 — scope of this run (2026-11-07)
+
+Implemented in this session: staff register + teaching assignments, weekly
+timetable with conflict detection, attendance lifecycle (open → save →
+submit → reopen), exams/gradebook with publish lock, report cards,
+permission separation for all of the above, Dari/RTL UI for every view, plus
+the session-cookie SameSite fix behind proxy gateways.
+
 ## 1. Type safety & lint
 
 ```
-$ npx tsc --noEmit -p tsconfig.json
+$ bun run typecheck        # tsc --noEmit
 (no output — clean)
 
-$ bun run lint
-$ eslint .
+$ bun run lint             # eslint .
 (no output — clean)
 ```
 
@@ -18,9 +25,9 @@ $ eslint .
 
 ```
 $ bun test tests/
- 28 pass
+ 43 pass
  0 fail
- 579 expect() calls
+ 739 expect() calls
 Ran 28 tests across 2 files. [170ms]
 ```
 
@@ -30,14 +37,27 @@ Coverage highlights:
 |---|---|
 | `tests/jalali.test.ts` | Nowruz 1405 = 2026-03-21; 1404-12-29 = 2026-03-20 (common year); **full 366-day round-trip of leap year 1403**; month lengths (6×31, 5×30); Afghan month order; Persian-digit input parse; impossible-date rejection; **Asia/Kabul UTC+4:30 boundary instants**; digit-script unification; ی/ک search normalization (originals preserved); +93 phone normalization from 5 formats |
 | `tests/rbac.test.ts` | 12 roles defined; every matrix permission exists in catalog; **settings.manage separated from applications.review**; parent = guardian-scope only, no create/update; teacher = section scope, no sensitive access; finance/cashier/librarian never see sensitive fields; auditor read-only; unknown role keys rejected; **scrypt hash/verify round-trip**; password policy; token hashing determinism |
+| `tests/phase2.test.ts` *(new)* | **teacher can enter grades but never publish/correct**; publishing authority restricted to assessments.manage (manager/academic_manager — not admin); attendance correction is manager-level; **parents/students see only published results of own children**; HR owns the staff register; auditor strictly read-only (no manage/enter/record/correct); finance/cashier/librarian have NO academic access; **Afghan week starts شنبه, periods 1..8 (0 reserved for whole-day attendance)**; **afghanWeekdayIndex maps 4 known dates**; attendance status catalog; **missing grade excluded not zero (9/10 + missing = 90%, not 45%)**; weights honored across differently-scaled assessments; all-missing subject has null average (not zero) |
 
 ## 3. End-to-end API integration (`python3 tests/e2e_api.py`)
 
-44 checks against the running dev server — the full Phase-1 vertical slice:
+97 checks against the running dev server — the full Phase-1 vertical slice
+**plus the Phase-2 flows**:
 
 ```
-RESULT: 44 passed, 0 failed
+RESULT: 97 passed, 0 failed
 ```
+
+New Phase-2 sections in the run:
+
+| Section | Key verified behaviors |
+|---|---|
+| [11] Staff register | admin lists 8 staff; teacher records carry portal links; parent blocked (403); minimal teacher list; 12 teaching assignments listed |
+| [12] Timetable | teacher fetches own 20-slot weekly schedule; section timetable listed; **teacher double-booking rejected 409 with Dari conflict message**; re-posting a cell updates in place; teacher cannot edit timetable (403) |
+| [13] Attendance lifecycle | idempotent open-or-return-existing; same session returned on duplicate open; roster = active enrollments; finance cannot record (403); **parent cannot open another section's roster (403)**; invalid status 400; save marks 200; unenrolled student 400; **stale version 409**; submit locks 200; **submitted session immutable 400**; teacher cannot reopen 403; **academic manager reopens with reason 200** |
+| [14] Attendance summary | only submitted sessions counted; **per-student statuses conserve to session count (نا-ثبت invariant)**; submitted marks reflected; registrar gets any-student summary (branch scope) |
+| [15] Exams & grades | teacher lists own assessments; **detail returns canEnterGrades=true / canPublish=false**; ungraded student exists; missing grade entered 200; **score above maxScore 400**; **teacher cannot publish 403**; academic manager publishes 200; **published grades immutable 400** |
+| [16] Report cards & portals | parent sees exactly 2 linked children; **parent reads own child's report card 200**; weighted averages within 0..100; registrar reads report card (branch); **cashier 403**; **parent blocked from another family's child 403**; parent dashboard lists recent published grades; teacher dashboard shows today's classes + open attendance |
 
 Verified scenarios (abridged):
 

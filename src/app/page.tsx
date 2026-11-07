@@ -16,6 +16,10 @@ import { StudentProfileView } from "@/features/students/student-profile-view";
 import { ApplicationsListView } from "@/features/admissions/applications-list-view";
 import { ApplicationDetailView } from "@/features/admissions/application-detail-view";
 import { AdmissionStepper } from "@/features/admissions/admission-stepper";
+import { StaffView } from "@/features/staff/staff-view";
+import { TimetableView } from "@/features/timetable/timetable-view";
+import { AttendanceView } from "@/features/attendance/attendance-view";
+import { ExamsView } from "@/features/exams/exams-view";
 import { SettingsView } from "@/features/settings/settings-view";
 import { RoadmapView } from "@/features/shared/roadmap-view";
 import { hasGrant } from "@/app-shell/shell";
@@ -137,6 +141,14 @@ function AppRoutes() {
     } else {
       content = <ApplicationDetailView id={b} />;
     }
+  } else if (a === "staff") {
+    content = hasGrant(me, "staff.view") ? <StaffView /> : <NoPermissionView />;
+  } else if (a === "timetable") {
+    content = hasGrant(me, "timetable.view") ? <TimetableView /> : <NoPermissionView />;
+  } else if (a === "attendance") {
+    content = hasGrant(me, "attendance.view") ? <AttendanceView /> : <NoPermissionView />;
+  } else if (a === "exams") {
+    content = hasGrant(me, "assessments.view") ? <ExamsView /> : <NoPermissionView />;
   } else if (a === "settings") {
     content = <SettingsView tab={b ?? "org"} />;
   } else if (a === "roadmap") {

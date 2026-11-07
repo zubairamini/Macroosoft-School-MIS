@@ -51,13 +51,17 @@ const spec = {
       "server-side. Errors use a consistent envelope with Dari messages. " +
       "State-changing requests require the x-maktabyar-client header or a " +
       "same-origin Origin header (CSRF defense).",
-    version: "1.0.0-phase1",
+    version: "1.1.0-phase2",
   },
   servers: [{ url: "/api/v1", description: "Same-origin API" }],
   tags: [
     { name: "auth", description: "ورود، خروج و نشست" },
     { name: "org", description: "پروفایل مکتب و تنظیم اولیه" },
     { name: "academic", description: "سال تعلیمی، صنف‌ها، شعبه‌ها، مضامین" },
+    { name: "staff", description: "کادر مکتب و تخصیص‌های تدریس (مرحلهٔ دوم)" },
+    { name: "timetable", description: "برنامهٔ هفتگیٔ صنف‌ها با تشخیص تضاد (مرحلهٔ دوم)" },
+    { name: "attendance", description: "حاضری روزانه/پریودی با قطعیت و تصحیح (مرحلهٔ دوم)" },
+    { name: "assessments", description: "امتحانات، ثبت نمرات و انتشار نتایج (مرحلهٔ دوم)" },
     { name: "applications", description: "درخواست‌های شمولیت و چرخهٔ تصمیم" },
     { name: "students", description: "شاگردان، پروفایل و چرخهٔ حیات" },
     { name: "guardians", description: "اولیا" },
@@ -343,6 +347,142 @@ const spec = {
         summary: "تغییر وضعیت حیات (انصراف/انتقال نیاز به دلیل دارد)",
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: { 200: okJson("Student"), 400: errorResponse("دلیل الزامی") },
+      },
+    },
+    "/staff": {
+      get: {
+        tags: ["staff"],
+        summary: "ثبت‌نامهٔ کادر مکتب (staff.view)",
+        parameters: [
+          { name: "q", in: "query", schema: { type: "string" } },
+          { name: "position", in: "query", schema: { type: "string", enum: ["teacher", "admin_staff", "support"] } },
+          { name: "status", in: "query", schema: { type: "string" } },
+          { name: "minimal", in: "query", schema: { type: "string", enum: ["teachers"] } },
+        ],
+        responses: { 200: okList("Student"), 403: errorResponse("بدون اجازهٔ staff.view") },
+      },
+      post: { tags: ["staff"], summary: "ثبت کارمند جدید (staff.manage)", responses: { 200: okJson("Student"), 400: errorResponse("اعتبارسنجی") } },
+    },
+    "/staff/{id}": {
+      get: { tags: ["staff"], summary: "جزئیات کارمند با تخصیص‌های تدریس", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 404: errorResponse("پیدا نشد") } },
+      patch: { tags: ["staff"], summary: "ویرایش کارمند (کنترل نسخه)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 409: errorResponse("تعارض نسخه") } },
+    },
+    "/teaching-assignments": {
+      get: {
+        tags: ["staff"],
+        summary: "تخصیص‌های تدریس (academic.view)",
+        parameters: [
+          { name: "academicYearId", in: "query", schema: { type: "string" } },
+          { name: "classSectionId", in: "query", schema: { type: "string" } },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: { tags: ["staff"], summary: "تخصیص استاد به مضمون/شعبهٔ صنف (academic.manage) — یک استاد در هر مضمون", responses: { 200: okJson("Student"), 409: errorResponse("مضمون به استاد دیگر سپرده شده") } },
+      delete: { tags: ["staff"], summary: "حذف تخصیص (academic.manage)", responses: { 200: okJson("Student") } },
+    },
+    "/timetable": {
+      get: {
+        tags: ["timetable"],
+        summary: "برنامهٔ هفتگی (بخش یا برنامهٔ خود استاد با mine=1)",
+        parameters: [
+          { name: "classSectionId", in: "query", schema: { type: "string" } },
+          { name: "mine", in: "query", schema: { type: "string", enum: ["1"] }, description: "برنامهٔ هفتگیٔ خود استاد" },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: {
+        tags: ["timetable"],
+        summary: "ذخیرهٔ خانهٔ برنامه (timetable.manage) — تضاد استاد/شعبه خودکار رد می‌شود",
+        responses: { 200: okJson("Student"), 409: errorResponse("تضاد زمانی استاد یا شعبهٔ صنف") },
+      },
+      delete: { tags: ["timetable"], summary: "حذف خانهٔ برنامه (timetable.manage)", responses: { 200: okJson("Student") } },
+    },
+    "/attendance/sessions": {
+      get: {
+        tags: ["attendance"],
+        summary: "سیشن‌های حاضری (attendance.view)",
+        parameters: [
+          { name: "classSectionId", in: "query", schema: { type: "string" } },
+          { name: "from", in: "query", schema: { type: "string", format: "date" } },
+          { name: "to", in: "query", schema: { type: "string", format: "date" } },
+          { name: "status", in: "query", schema: { type: "string", enum: ["open", "submitted"] } },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: {
+        tags: ["attendance"],
+        summary: "باز کردن سیشن (attendance.record) — idempotent؛ قطعی‌شده رد می‌شود",
+        responses: { 200: okJson("Student"), 409: errorResponse("حاضری این روز قطعی شده — مسیر تصحیح") },
+      },
+    },
+    "/attendance/sessions/{id}": {
+      get: { tags: ["attendance"], summary: "روستر حاضری با ریکارود فعلی", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 403: errorResponse("خارج از حیطهٔ اجازه") } },
+      put: { tags: ["attendance"], summary: "ذخیرهٔ علائم روستر (فقط سیشن باز؛ کنترل نسخه)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 400: errorResponse("قطعی‌شده قابل ویرایش نیست"), 409: errorResponse("تعارض نسخه") } },
+    },
+    "/attendance/sessions/{id}/submit": {
+      post: { tags: ["attendance"], summary: "قطعی کردن حاضری — از این پس در آمار محاسبه می‌شود", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 409: errorResponse("تعارض نسخه") } },
+    },
+    "/attendance/sessions/{id}/reopen": {
+      post: {
+        tags: ["attendance"],
+        summary: "بازگرداندن حاضری قطعی‌شده (attendance.correct؛ دلیل الزامی)",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student"), 403: errorResponse("فقط مدیر تعلیمی/مدیر مکتب") },
+      },
+    },
+    "/attendance/summary": {
+      get: {
+        tags: ["attendance"],
+        summary: "آمار حاضری — فقط سیشن‌های قطعی‌شده؛ «نا-ثبت» هرگز حاضر/غیرحاضر شمرده نمی‌شود",
+        parameters: [
+          { name: "classSectionId", in: "query", schema: { type: "string" } },
+          { name: "studentId", in: "query", schema: { type: "string" } },
+        ],
+        responses: { 200: okJson("Student") },
+      },
+    },
+    "/assessments": {
+      get: {
+        tags: ["assessments"],
+        summary: "لست امتحانات (assessments.view)",
+        parameters: [
+          { name: "classSectionId", in: "query", schema: { type: "string" } },
+          { name: "status", in: "query", schema: { type: "string", enum: ["grading", "published"] } },
+        ],
+        responses: { 200: okList("Student") },
+      },
+      post: { tags: ["assessments"], summary: "ایجاد امتحان (assessments.manage)", responses: { 200: okJson("Student"), 403: errorResponse("فقط مدیر تعلیمی/مدیر مکتب") } },
+    },
+    "/assessments/{id}": {
+      get: { tags: ["assessments"], summary: "جزئیات + روستر نمرات (ولی/شاگرد: فقط منتشرشده)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 403: errorResponse("خارج از حیطهٔ اجازه") } },
+      patch: { tags: ["assessments"], summary: "ویرایش (فقط قبل از انتشار)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student"), 400: errorResponse("منتشرشده قابل ویرایش نیست") } },
+    },
+    "/assessments/{id}/grades": {
+      get: { tags: ["assessments"], summary: "روستر نمرات", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: okJson("Student") } },
+      put: {
+        tags: ["assessments"],
+        summary: "ثبت نمرات (grades.enter — استاد مضمون یا مدیر تعلیمی)؛ خالی = نا-ثبت نه صفر",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student"), 400: errorResponse("نمره > نمرهٔ کل / منتشرشده"), 409: errorResponse("تعارض نسخه") },
+      },
+    },
+    "/assessments/{id}/publish": {
+      post: {
+        tags: ["assessments"],
+        summary: "انتشار نتایج (assessments.manage) — قطعی + نسخهٔ سیاست نمره‌دهی ذخیره می‌شود",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: okJson("Student"), 400: errorResponse("حداقل یک نمره لازم است") },
+      },
+    },
+    "/students/{id}/report-card": {
+      get: {
+        tags: ["assessments"],
+        summary: "کارت نتیجه — فقط نمرات منتشرشده؛ میانگین وزنی بدون احتساب نا-ثبت",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+          { name: "academicYearId", in: "query", schema: { type: "string" } },
+        ],
+        responses: { 200: okJson("Student"), 403: errorResponse("خارج از حیطهٔ اجازه (ولی: فقط فرزند خود)" ) },
       },
     },
     "/guardians": {

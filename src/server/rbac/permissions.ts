@@ -29,6 +29,18 @@ export const PERMISSIONS = [
   "guardians.manage",
   "academic.view",
   "academic.manage",
+  // ── Phase 2: staff, timetable, attendance, exams & grades ─────────
+  "staff.view",
+  "staff.manage",
+  "timetable.view",
+  "timetable.manage",
+  "attendance.view",
+  "attendance.record",
+  "attendance.correct",
+  "assessments.view",
+  "assessments.manage",
+  "grades.enter",
+  "grades.view",
   "settings.view",
   "settings.manage",
   "users.view",
@@ -116,6 +128,15 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "guardians.manage", scope: "all" },
     { permission: "academic.view", scope: "all" },
     { permission: "academic.manage", scope: "all" },
+    // Phase 2 — system administration keeps manage rights for structure
+    // (staff/timetable), plus read-only oversight of academic records.
+    { permission: "staff.view", scope: "all" },
+    { permission: "staff.manage", scope: "all" },
+    { permission: "timetable.view", scope: "all" },
+    { permission: "timetable.manage", scope: "all" },
+    { permission: "attendance.view", scope: "all" },
+    { permission: "assessments.view", scope: "all" },
+    { permission: "grades.view", scope: "all" },
     { permission: "settings.view", scope: "all" },
     { permission: "settings.manage", scope: "all" },
     { permission: "users.view", scope: "all" },
@@ -138,6 +159,15 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "guardians.view", scope: "branch" },
     { permission: "academic.view", scope: "branch" },
     { permission: "academic.manage", scope: "branch" },
+    // Phase 2 — business approval of academic records (publish/correct).
+    { permission: "staff.view", scope: "branch" },
+    { permission: "timetable.view", scope: "branch" },
+    { permission: "timetable.manage", scope: "branch" },
+    { permission: "attendance.view", scope: "branch" },
+    { permission: "attendance.correct", scope: "branch" },
+    { permission: "assessments.view", scope: "branch" },
+    { permission: "assessments.manage", scope: "branch" },
+    { permission: "grades.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "users.view", scope: "all" },
     { permission: "roles.view", scope: "all" },
@@ -155,6 +185,17 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "guardians.view", scope: "branch" },
     { permission: "academic.view", scope: "branch" },
     { permission: "academic.manage", scope: "branch" },
+    // Phase 2 — academic manager defines exams/timetable, may substitute
+    // grade entry, and approves publishing.
+    { permission: "staff.view", scope: "branch" },
+    { permission: "timetable.view", scope: "branch" },
+    { permission: "timetable.manage", scope: "branch" },
+    { permission: "attendance.view", scope: "branch" },
+    { permission: "attendance.correct", scope: "branch" },
+    { permission: "assessments.view", scope: "branch" },
+    { permission: "assessments.manage", scope: "branch" },
+    { permission: "grades.enter", scope: "branch" },
+    { permission: "grades.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "roles.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
@@ -175,6 +216,10 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "guardians.view", scope: "branch" },
     { permission: "guardians.manage", scope: "branch" },
     { permission: "academic.view", scope: "branch" },
+    // Phase 2 — registrars consult attendance reports while handling records
+    // and print report cards from published results (no grade entry).
+    { permission: "attendance.view", scope: "branch" },
+    { permission: "grades.view", scope: "branch" },
     { permission: "settings.view", scope: "all" },
     { permission: "roles.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
@@ -200,6 +245,14 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     // Only students in assigned class sections; no sensitive fields.
     { permission: "students.view", scope: "section" },
     { permission: "academic.view", scope: "branch" },
+    // Phase 2 — teacher's own sections only (scope engine narrows by
+    // UserRole.sectionIds and/or TeachingAssignment rows).
+    { permission: "timetable.view", scope: "section" },
+    { permission: "attendance.view", scope: "section" },
+    { permission: "attendance.record", scope: "section" },
+    { permission: "assessments.view", scope: "section" },
+    { permission: "grades.enter", scope: "section" },
+    { permission: "grades.view", scope: "section" },
     { permission: "roles.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
     { permission: "search.use", scope: "section" },
@@ -212,7 +265,11 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
   ],
   hr_officer: [
     { permission: "dashboard.view", scope: "all" },
+    // Phase 2 — HR owns the staff register and staff portal accounts.
+    { permission: "staff.view", scope: "all" },
+    { permission: "staff.manage", scope: "all" },
     { permission: "users.view", scope: "all" },
+    { permission: "users.manage", scope: "all" },
     { permission: "settings.view", scope: "all" },
     { permission: "notifications.view", scope: "own" },
     { permission: "search.use", scope: "all" },
@@ -220,12 +277,18 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
   student: [
     { permission: "dashboard.view", scope: "all" },
     { permission: "students.view", scope: "own" },
+    // Phase 2 — own results and own attendance (published only).
+    { permission: "attendance.view", scope: "own" },
+    { permission: "grades.view", scope: "own" },
     { permission: "notifications.view", scope: "own" },
   ],
   parent: [
     { permission: "dashboard.view", scope: "all" },
     // Only explicitly linked children — enforced by guardian scope checks.
     { permission: "students.view", scope: "guardian" },
+    // Phase 2 — children's published results and attendance.
+    { permission: "attendance.view", scope: "guardian" },
+    { permission: "grades.view", scope: "guardian" },
     { permission: "notifications.view", scope: "own" },
   ],
   auditor: [
@@ -234,6 +297,12 @@ export const ROLE_MATRIX: Record<RoleKey, Grant[]> = {
     { permission: "applications.view", scope: "all" },
     { permission: "guardians.view", scope: "all" },
     { permission: "academic.view", scope: "all" },
+    // Phase 2 — strictly read-only academic oversight.
+    { permission: "staff.view", scope: "all" },
+    { permission: "timetable.view", scope: "all" },
+    { permission: "attendance.view", scope: "all" },
+    { permission: "assessments.view", scope: "all" },
+    { permission: "grades.view", scope: "all" },
     { permission: "settings.view", scope: "all" },
     { permission: "users.view", scope: "all" },
     { permission: "roles.view", scope: "all" },

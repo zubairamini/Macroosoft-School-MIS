@@ -70,6 +70,7 @@ export const api = {
     request<T>(path, { method: "PUT", body: JSON.stringify(body ?? {}) }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
+  del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
 // ── Shared DTO types (mirror of server DTOs) ────────────────────────────────
@@ -241,6 +242,13 @@ export interface DashboardSummary {
     byGrade: Array<{ gradeName: string; label: string; enrolled: number; capacity: number }>;
   } | null;
   assignedSections?: Array<{ id: string; gradeName: string; label: string; students: number }>;
+  attendanceToday?: Array<{ id: string; sectionId: string; gradeName: string; sectionLabel: string }>;
+  todayClasses?: Array<{ period: number; subjectName: string; gradeName: string; sectionLabel: string; roomName: string | null }>;
+  attendanceOverviewToday?: { submitted: number; open: number };
+  recentGrades?: Array<{
+    studentId: string; firstName: string; title: string; subjectName: string;
+    score: number | null; maxScore: number; isAbsent: boolean; at: string;
+  }>;
   children?: Array<{
     studentId: string;
     studentNumber: string;
@@ -331,4 +339,173 @@ export interface GuardianDto {
   canPickUp: boolean;
   portalAccess: boolean;
   children: Array<{ studentId: string; studentNumber: string; firstName: string; relationship: string; isPrimary: boolean }>;
+}
+
+// ── Phase 2 DTOs ────────────────────────────────────────────────────────────
+
+export interface StaffDto {
+  id: string;
+  fullName: string;
+  fatherName: string;
+  gender: string;
+  birthDate: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  branchId: string | null;
+  branchName: string | null;
+  position: string;
+  qualification: string | null;
+  hireDate: string | null;
+  employmentType: string;
+  specialtySubjectIds: string[];
+  status: string;
+  statusNote: string | null;
+  portal: { id: string; username: string; isActive: boolean } | null;
+  teachingAssignmentCount: number;
+  version: number;
+  createdAt: string;
+}
+
+export interface StaffDetailDto extends StaffDto {
+  assignments: Array<{
+    id: string; academicYearId: string; academicYearName: string;
+    sectionId: string; gradeName: string; sectionLabel: string;
+    subjectId: string; subjectName: string;
+  }>;
+}
+
+export interface TeachingAssignmentDto {
+  id: string;
+  academicYearId: string;
+  classSectionId: string;
+  staffId: string;
+  subjectId: string;
+  staff: { id: string; fullName: string; status: string };
+  subject: { id: string; nameDari: string };
+  classSection: {
+    id: string; label: string;
+    gradeLevel: { level: number; nameDari: string };
+    branch: { id: string; name: string };
+  };
+}
+
+export interface TimetableSlotDto {
+  id: string;
+  classSectionId: string;
+  gradeName: string;
+  sectionLabel: string;
+  branchName: string;
+  weekday: number;
+  weekdayLabel: string;
+  period: number;
+  subjectId: string | null;
+  subjectName: string | null;
+  staffId: string | null;
+  staffName: string | null;
+  roomName: string | null;
+}
+
+export interface AttendanceSessionDto {
+  id: string;
+  classSectionId: string;
+  gradeName: string;
+  sectionLabel: string;
+  branchName: string;
+  date: string;
+  period: number;
+  status: string;
+  note: string | null;
+  recorderName: string | null;
+  submitterName: string | null;
+  submittedAt: string | null;
+  recordCount: number | null;
+  version: number;
+  createdAt: string;
+}
+
+export interface AttendanceRosterEntry {
+  studentId: string;
+  studentNumber: string;
+  firstName: string;
+  fatherName: string;
+  rollNumber: number | null;
+  record: { status: string; note: string | null; updatedAt: string } | null;
+}
+
+export interface AttendanceSessionDetailDto extends AttendanceSessionDto {
+  roster: AttendanceRosterEntry[];
+}
+
+export interface AttendanceSummaryDto {
+  sessions: number;
+  byStatus: { present: number; absent: number; late: number; excused: number; notRecorded: number };
+  students: Array<{
+    studentId: string; studentNumber: string; firstName: string;
+    sessions: number; present: number; absent: number; late: number; excused: number; notRecorded: number;
+  }>;
+}
+
+export interface AssessmentDto {
+  id: string;
+  academicYearId: string;
+  termId: string | null;
+  classSectionId: string;
+  gradeName: string;
+  sectionLabel: string;
+  branchName: string;
+  subjectId: string;
+  subjectName: string;
+  staffId: string | null;
+  staffName: string | null;
+  title: string;
+  type: string;
+  date: string | null;
+  maxScore: number;
+  weight: number;
+  status: string;
+  publishedAt: string | null;
+  gradeCount: number;
+  version: number;
+  createdAt: string;
+}
+
+export interface AssessmentDetailDto extends AssessmentDto {
+  roster: Array<{
+    studentId: string; studentNumber: string; firstName: string; fatherName: string;
+    rollNumber: number | null; score: number | null; isAbsent: boolean;
+    note: string | null; hasGrade: boolean;
+  }>;
+  canEnterGrades: boolean;
+  canPublish: boolean;
+}
+
+export interface ReportCardDto {
+  studentId: string;
+  studentNumber: string;
+  firstName: string;
+  gradeName: string | null;
+  sectionLabel: string | null;
+  academicYearName: string | null;
+  subjects: Array<{
+    subjectId: string; subjectName: string; average: number | null;
+    items: Array<{
+      assessmentId: string; title: string; type: string; score: number | null;
+      maxScore: number; weight: number; isAbsent: boolean; publishedAt: string | null;
+    }>;
+  }>;
+  attendance: { sessions: number; present: number; absent: number; late: number; excused: number; notRecorded: number } | null;
+}
+
+export interface RecentGradeDto {
+  studentId: string;
+  firstName: string;
+  assessmentId: string;
+  title: string;
+  type: string;
+  subjectName: string;
+  score: number | null;
+  maxScore: number;
+  isAbsent: boolean;
+  at: string;
 }

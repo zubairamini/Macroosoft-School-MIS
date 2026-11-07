@@ -9,7 +9,9 @@ import type {
   MeResponse, OrgContext, StudentListItem, StudentProfile, ApplicationDto,
   ListMeta, DashboardSummary, SearchHit, NotificationDto, AuditEventDto,
   UserDto, GradeLevelDto, SectionDto, AcademicYearDto, SubjectDto,
-  AppSettingsDto, GuardianDto,
+  AppSettingsDto, GuardianDto, StaffDto, StaffDetailDto, TeachingAssignmentDto,
+  TimetableSlotDto, AttendanceSessionDto, AttendanceSessionDetailDto,
+  AttendanceSummaryDto, AssessmentDto, AssessmentDetailDto, ReportCardDto,
 } from "./client";
 
 function qs(params: Record<string, string | number | undefined | null>): string {
@@ -396,6 +398,228 @@ export function useUpdateSettings() {
     mutationFn: async (vars: Record<string, unknown>) =>
       (await api.patch<AppSettingsDto>("/settings", vars)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+  });
+}
+
+// ── Phase 2: staff, timetable, attendance, assessments & grades ─────────────
+
+export function useStaff(filters: { q?: string; position?: string; status?: string } = {}) {
+  return useQuery({
+    queryKey: ["staff", filters.q ?? "", filters.position ?? "", filters.status ?? ""],
+    queryFn: async () => (await api.get<StaffDto[]>(`/staff${qs(filters)}`)).data,
+  });
+}
+
+export function useStaffMember(id: string | null) {
+  return useQuery({
+    queryKey: ["staff-member", id],
+    queryFn: async () => (await api.get<StaffDetailDto>(`/staff/${id}`)).data,
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateStaff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<unknown>("/staff", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff"] }),
+  });
+}
+
+export function useUpdateStaff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; body: Record<string, unknown> }) =>
+      (await api.patch<unknown>(`/staff/${vars.id}`, vars.body)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff"] });
+      qc.invalidateQueries({ queryKey: ["staff-member"] });
+    },
+  });
+}
+
+export function useTimetable(filters: { classSectionId?: string; mine?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["timetable", filters.classSectionId ?? "", filters.mine ? "mine" : ""],
+    queryFn: async () => {
+      if (filters.mine) {
+        const res = await api.get<{ staff: { id: string; fullName: string } | null; slots: TimetableSlotDto[] }>("/timetable?mine=1");
+        return res.data;
+      }
+      const res = await api.get<TimetableSlotDto[]>(`/timetable${qs({ classSectionId: filters.classSectionId })}`);
+      return { staff: null as { id: string; fullName: string } | null, slots: res.data };
+    },
+  });
+}
+
+export function useUpsertTimetableSlot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<unknown>("/timetable", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["timetable"] }),
+  });
+}
+
+export function useDeleteTimetableSlot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => (await api.del<unknown>(`/timetable?id=${id}`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["timetable"] }),
+  });
+}
+
+export function useTeachingAssignments(filters: { academicYearId?: string; classSectionId?: string } = {}) {
+  return useQuery({
+    queryKey: ["teaching-assignments", filters.academicYearId ?? "", filters.classSectionId ?? ""],
+    queryFn: async () => (await api.get<TeachingAssignmentDto[]>(`/teaching-assignments${qs(filters)}`)).data,
+  });
+}
+
+export function useSetAssignment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<unknown>("/teaching-assignments", vars)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["teaching-assignments"] });
+      qc.invalidateQueries({ queryKey: ["staff-member"] });
+    },
+  });
+}
+
+export function useAttendanceSessions(filters: { classSectionId?: string; from?: string; to?: string; status?: string } = {}) {
+  return useQuery({
+    queryKey: ["attendance-sessions", filters.classSectionId ?? "", filters.from ?? "", filters.to ?? "", filters.status ?? ""],
+    queryFn: async () => (await api.get<AttendanceSessionDto[]>(`/attendance/sessions${qs(filters)}`)).data,
+  });
+}
+
+export function useAttendanceSession(id: string | null) {
+  return useQuery({
+    queryKey: ["attendance-session", id],
+    queryFn: async () => (await api.get<AttendanceSessionDetailDto>(`/attendance/sessions/${id}`)).data,
+    enabled: Boolean(id),
+  });
+}
+
+export function useUpsertAttendanceSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { classSectionId: string; date: string; period?: number; note?: string }) =>
+      (await api.post<unknown>("/attendance/sessions", {
+        classSectionId: vars.classSectionId, date: vars.date,
+        period: vars.period ?? 0, note: vars.note,
+      })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance-sessions"] }),
+  });
+}
+
+export function useSaveAttendanceRecords() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: {
+      sessionId: string; version: number;
+      records: Array<{ studentId: string; status: string; note?: string | null }>;
+    }) => (await api.put<unknown>(`/attendance/sessions/${vars.sessionId}`, {
+      version: vars.version, records: vars.records,
+    })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance-session"] });
+      qc.invalidateQueries({ queryKey: ["attendance-sessions"] });
+    },
+  });
+}
+
+export function useSubmitAttendanceSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { sessionId: string; version: number }) =>
+      (await api.post<unknown>(`/attendance/sessions/${vars.sessionId}/submit`, { version: vars.version })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance-session"] });
+      qc.invalidateQueries({ queryKey: ["attendance-sessions"] });
+    },
+  });
+}
+
+export function useReopenAttendanceSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { sessionId: string; reason: string }) =>
+      (await api.post<unknown>(`/attendance/sessions/${vars.sessionId}/reopen`, { reason: vars.reason })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance-session"] });
+      qc.invalidateQueries({ queryKey: ["attendance-sessions"] });
+    },
+  });
+}
+
+export function useAttendanceSummary(filters: { classSectionId?: string; studentId?: string } = {}) {
+  return useQuery({
+    queryKey: ["attendance-summary", filters.classSectionId ?? "", filters.studentId ?? ""],
+    queryFn: async () => (await api.get<AttendanceSummaryDto>(`/attendance/summary${qs(filters)}`)).data,
+  });
+}
+
+export function useAssessments(filters: { academicYearId?: string; classSectionId?: string; status?: string } = {}) {
+  return useQuery({
+    queryKey: ["assessments", filters.academicYearId ?? "", filters.classSectionId ?? "", filters.status ?? ""],
+    queryFn: async () => (await api.get<AssessmentDto[]>(`/assessments${qs(filters)}`)).data,
+  });
+}
+
+export function useAssessment(id: string | null) {
+  return useQuery({
+    queryKey: ["assessment", id],
+    queryFn: async () => (await api.get<AssessmentDetailDto>(`/assessments/${id}`)).data,
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateAssessment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: Record<string, unknown>) =>
+      (await api.post<unknown>("/assessments", vars)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["assessments"] }),
+  });
+}
+
+export function useEnterGrades() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: {
+      assessmentId: string; version: number;
+      grades: Array<{ studentId: string; score?: number | null; isAbsent?: boolean; note?: string | null }>;
+    }) => (await api.put<unknown>(`/assessments/${vars.assessmentId}/grades`, {
+      version: vars.version, grades: vars.grades,
+    })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["assessment"] });
+      qc.invalidateQueries({ queryKey: ["assessments"] });
+    },
+  });
+}
+
+export function usePublishAssessment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { assessmentId: string; version: number }) =>
+      (await api.post<unknown>(`/assessments/${vars.assessmentId}/publish`, { version: vars.version })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["assessment"] });
+      qc.invalidateQueries({ queryKey: ["assessments"] });
+    },
+  });
+}
+
+export function useReportCard(studentId: string | null) {
+  return useQuery({
+    queryKey: ["report-card", studentId],
+    queryFn: async () => (await api.get<ReportCardDto>(`/students/${studentId}/report-card`)).data,
+    enabled: Boolean(studentId),
   });
 }
 

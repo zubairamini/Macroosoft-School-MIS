@@ -75,6 +75,8 @@ model Organization {
   applications  Application[]
   students      Student[]
   guardians     Guardian[]
+  staffMembers  StaffMember[]
+  assessments   Assessment[]
 }
 
 model Branch {
@@ -94,6 +96,7 @@ model Branch {
   rooms          Room[]
   classSections  ClassSection[]
   userRoles      UserRole[]
+  staffMembers   StaffMember[]
 
   @@unique([orgId, code])
   @@index([orgId])
@@ -117,6 +120,8 @@ model AcademicYear {
   classSections  ClassSection[]
   applications   Application[]
   enrollments    Enrollment[]
+  teachingAssignments TeachingAssignment[]
+  assessments    Assessment[]
 
   @@unique([orgId, name])
   @@index([orgId, isCurrent])
@@ -131,6 +136,7 @@ model Term {
   startDate      String
   endDate        String
   createdAt      DateTime @default(now())
+  assessments    Assessment[]
 
   @@unique([academicYearId, index])
 }
@@ -189,6 +195,11 @@ model Subject {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  teachingAssignments TeachingAssignment[]
+  timetableSlots      TimetableSlot[]
+  attendanceSessions  AttendanceSession[]
+  assessments         Assessment[]
+
   @@unique([orgId, code])
 }
 
@@ -211,7 +222,11 @@ model ClassSection {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  enrollments Enrollment[]
+  enrollments       Enrollment[]
+  teachingAssignments TeachingAssignment[]
+  timetableSlots    TimetableSlot[]
+  attendanceSessions AttendanceSession[]
+  assessments       Assessment[]
 
   @@unique([academicYearId, gradeLevelId, label])
   @@index([branchId])
@@ -234,8 +249,6 @@ model User {
   // Links a parent/guardian portal account to its Guardian record
   guardianId       String?
   guardian         Guardian? @relation(fields: [guardianId], references: [id])
-  // Links staff portal account to its employee record (Phase: HR)
-  employeeId       String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -243,6 +256,8 @@ model User {
   userRoles   UserRole[]
   auditEvents AuditEvent[]
   notifications Notification[]
+  // Inverse of StaffMember.userId — the staff record this account is linked to
+  staffMember StaffMember? @relation("StaffPortalUser")
 
   @@index([guardianId])
 }
@@ -394,6 +409,8 @@ model Student {
   enrollments Enrollment[] @relation("Enrollments")
   guardians   StudentGuardian[]
   documents   StudentDocument[]
+  attendanceRecords AttendanceRecord[]
+  grades      Grade[]
 
   @@index([orgId, status])
 }
@@ -449,6 +466,228 @@ model StudentDocument {
   uploadedById String?
   uploadedAt   DateTime @default(now())
 
+  @@index([studentId])
+}
+
+// ── Staff (teachers & employees) — Phase 2 ─────────────────────────────
+
+model StaffMember {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  branchId  String?
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+  // Optional portal account link (single relation: StaffMember.userId → User)
+  userId    String?  @unique
+  user      User?    @relation("StaffPortalUser", fields: [userId], references: [id])
+  fullName  String
+  fatherName String
+  gender    String   // "male" | "female"
+  // date-only ISO "YYYY-MM-DD"
+  birthDate String
+  phone     String?
+  email     String?
+  address   String?
+  // "teacher" | "admin_staff" | "support" — staff category
+  position  String   @default("teacher")
+  // Free-text qualification, e.g. "لیسانس تعلیم و تربیه"
+  qualification String?
+  // date-only ISO — employment start
+  hireDate  String?
+  // "full_time" | "part_time" | "contract"
+  employmentType String @default("full_time")
+  // Subject specialty ids (JSON string array) — informational; the binding
+  // contract for teaching is TeachingAssignment.
+  specialtySubjectIds String @default("[]") // JSON
+  // "active" | "inactive" | "terminated"
+  status    String   @default("active")
+  statusNote String?
+  version   Int      @default(1)
+  createdById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teachingAssignments TeachingAssignment[]
+  timetableSlots      TimetableSlot[]
+  attendanceSessions  AttendanceSession[] @relation("AttendanceRecorder")
+  attendanceSubmits   AttendanceSession[] @relation("AttendanceSubmitter")
+  assessments         Assessment[]        @relation("AssessmentExaminer")
+
+  @@index([orgId, status])
+  @@index([branchId])
+}
+
+/// One teacher per (section, subject) per academic year.
+model TeachingAssignment {
+  id             String   @id @default(cuid())
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  classSectionId String
+  classSection   ClassSection @relation(fields: [classSectionId], references: [id])
+  subjectId      String
+  subject        Subject      @relation(fields: [subjectId], references: [id])
+  staffId        String
+  staff          StaffMember  @relation(fields: [staffId], references: [id])
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  // INVARIANT: exactly one teacher per subject per section per year.
+  @@unique([academicYearId, classSectionId, subjectId])
+  @@index([staffId])
+  @@index([classSectionId])
+}
+
+/// Weekly class schedule. Weekday: 0=شنبه .. 6=جمعه (Afghan week starts
+/// Saturday). Period: 1..8 (0 is reserved for whole-day attendance and is
+/// rejected here). Non-null columns keep the UNIQUE constraints airtight on
+/// SQLite (NULLs would be treated as distinct).
+model TimetableSlot {
+  id             String   @id @default(cuid())
+  classSectionId String
+  classSection   ClassSection @relation(fields: [classSectionId], references: [id])
+  weekday        Int // 0..6 (شنبه..جمعه)
+  period         Int // 1..8
+  subjectId      String?
+  subject        Subject?    @relation(fields: [subjectId], references: [id])
+  staffId        String?
+  staff          StaffMember? @relation(fields: [staffId], references: [id])
+  roomName       String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // INVARIANTS: a section has at most one slot per (weekday, period);
+  // a teacher is in at most one place per (weekday, period).
+  @@unique([classSectionId, weekday, period])
+  @@unique([staffId, weekday, period])
+  @@index([classSectionId])
+  @@index([staffId])
+}
+
+/// Attendance session for one section on one date.
+/// period: 0 = whole-day session (ثبت روزانه), 1..8 = specific class period.
+/// "Unrecorded ≠ present": only SUBMITTED sessions count in statistics, and
+/// a student without a record row inside a submitted session is counted as
+/// «نا-ثبت» (not recorded) — never silently as present or absent.
+model AttendanceSession {
+  id             String   @id @default(cuid())
+  classSectionId String
+  classSection   ClassSection @relation(fields: [classSectionId], references: [id])
+  // date-only ISO "YYYY-MM-DD" (Asia/Kabul local date)
+  date           String
+  period         Int      @default(0) // 0 = whole day, 1..8 = period
+  subjectId      String?
+  subject        Subject? @relation(fields: [subjectId], references: [id])
+  // "open" | "submitted"
+  status         String   @default("open")
+  note           String?
+  recordedById   String?
+  recorder       StaffMember? @relation("AttendanceRecorder", fields: [recordedById], references: [id])
+  submittedById  String?
+  submitter      StaffMember? @relation("AttendanceSubmitter", fields: [submittedById], references: [id])
+  submittedAt    DateTime?
+  // Reopen trail: who reopened which submitted session, and why.
+  reopenedById   String?
+  reopenedReason String?
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  records        AttendanceRecord[]
+
+  // INVARIANT: at most one session per (section, date, period) — duplicates
+  // are impossible at the database level, which also backs the idempotent
+  // "open or return existing" behavior for late/makeup recording.
+  @@unique([classSectionId, date, period])
+  @@index([classSectionId, date])
+  @@index([date])
+}
+
+model AttendanceRecord {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   AttendanceSession @relation(fields: [sessionId], references: [id])
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id])
+  // "present" | "absent" | "late" | "excused"
+  status    String
+  note      String?
+  editedById String?
+  editedAt  DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // INVARIANT: one record per student per session.
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+}
+
+/// Assessment (quiz / assignment / midterm / final / project) for one
+/// section + subject. Created by academic management; graded by the
+/// assigned teacher; PUBLISHING locks the grade table and snapshots the
+/// grading policy that was in force at publish time.
+model Assessment {
+  id             String   @id @default(cuid())
+  orgId          String
+  org            Organization @relation(fields: [orgId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  termId         String?
+  term           Term?    @relation(fields: [termId], references: [id])
+  classSectionId String
+  classSection   ClassSection @relation(fields: [classSectionId], references: [id])
+  subjectId      String
+  subject        Subject      @relation(fields: [subjectId], references: [id])
+  // Examiner (assigned teacher) — informational + used for grade-entry checks
+  staffId        String?
+  staff          StaffMember? @relation("AssessmentExaminer", fields: [staffId], references: [id])
+  title          String
+  // "quiz" | "assignment" | "midterm" | "final" | "project"
+  type           String   @default("quiz")
+  // date-only ISO — when it takes place
+  date           String?
+  maxScore       Int      @default(100)
+  // Relative weight in subject aggregation (missing grades excluded).
+  weight         Int      @default(1)
+  // "draft" | "grading" | "published"
+  status         String   @default("draft")
+  // Snapshot of the grading policy in force at publish time:
+  // {maxScore, weight, type} — the published result never re-computes from
+  // later edits (Phase 3 adds full versioned policy documents).
+  gradingPolicy  String?  // JSON
+  publishedById  String?
+  publishedAt    DateTime?
+  version        Int      @default(1)
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  grades         Grade[]
+
+  @@index([academicYearId, classSectionId])
+  @@index([classSectionId, subjectId])
+  @@index([orgId, status])
+}
+
+model Grade {
+  id           String   @id @default(cuid())
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id])
+  studentId    String
+  student      Student   @relation(fields: [studentId], references: [id])
+  // null = MISSING grade (excluded from aggregation — never counted as zero)
+  score        Int?
+  // Exam-day absence flag (distinct from a missing grade)
+  isAbsent     Boolean  @default(false)
+  note         String?
+  enteredById  String?
+  enteredAt    DateTime?
+  version      Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // INVARIANT: one grade row per (assessment, student).
+  @@unique([assessmentId, studentId])
   @@index([studentId])
 }
 

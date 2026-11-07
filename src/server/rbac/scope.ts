@@ -146,3 +146,120 @@ export async function studentListWhere(
 export function canViewSensitive(ctx: AuthContext): boolean {
   return can(ctx, "students.view_sensitive");
 }
+
+// ── Phase 2: section, staff & teaching-assignment scoping ──────────────────
+
+/**
+ * Section ids the viewer may act on for `permission` via section-scoped
+ * grants. `null` means "not narrowed by section" (all/branch grants — the
+ * caller must then apply branch narrowing separately or allow everything).
+ * An empty array means a teacher whose grants carry no sections: nothing.
+ */
+export function sectionIdsFor(ctx: AuthContext, permission: string): string[] | null {
+  const sectionGrants = ctx.grants.filter(
+    (g) => g.permission === permission && g.scope === "section",
+  );
+  if (sectionGrants.length === 0) return null;
+  const ids = sectionGrants.flatMap((g) => g.sectionIds ?? []);
+  return [...new Set(ids)];
+}
+
+/** Branch ids that narrow the viewer's branch-scoped grants; null param on a
+ *  grant = all branches (returns `true` for any section). */
+function branchAllowsAny(ctx: AuthContext, permission: string): boolean {
+  return ctx.grants.some(
+    (g) => g.permission === permission && g.scope === "branch" && !g.branchId,
+  );
+}
+
+export async function canAccessSection(
+  ctx: AuthContext,
+  permission: string,
+  sectionId: string,
+): Promise<boolean> {
+  const grants = ctx.grants.filter((g) => g.permission === permission);
+  if (grants.length === 0) return false;
+
+  if (grants.some((g) => g.scope === "all")) return true;
+
+  const sectionIds = sectionIdsFor(ctx, permission);
+  if (sectionIds && sectionIds.includes(sectionId)) return true;
+
+  if (branchAllowsAny(ctx, permission)) return true;
+  const branchIds = grants
+    .filter((g) => g.scope === "branch" && g.branchId)
+    .map((g) => g.branchId as string);
+  if (branchIds.length > 0) {
+    const section = await db.classSection.findUnique({
+      where: { id: sectionId },
+      select: { branchId: true },
+    });
+    if (section && branchIds.includes(section.branchId)) return true;
+  }
+  return false;
+}
+
+/** Prisma `where` for ClassSection LIST queries filtered by the viewer's
+ *  grants for `permission`. Returns null when the viewer has no grant. */
+export async function sectionListWhere(
+  ctx: AuthContext,
+  permission: string,
+): Promise<Record<string, unknown> | null> {
+  const grants = ctx.grants.filter((g) => g.permission === permission);
+  if (grants.length === 0) return null;
+  if (grants.some((g) => g.scope === "all")) return {};
+
+  const or: Record<string, unknown>[] = [];
+  const sectionIds = sectionIdsFor(ctx, permission);
+  if (sectionIds && sectionIds.length > 0) or.push({ id: { in: sectionIds } });
+
+  if (branchAllowsAny(ctx, permission)) return {};
+
+  const branchIds = grants
+    .filter((g) => g.scope === "branch" && g.branchId)
+    .map((g) => g.branchId as string);
+  if (branchIds.length > 0) or.push({ branchId: { in: branchIds } });
+
+  if (or.length === 0) return { id: "__none__" };
+  return { OR: or };
+}
+
+/** The StaffMember linked to the signed-in user's account, if any. */
+export async function staffForUser(userId: string): Promise<{ id: string } | null> {
+  return db.staffMember.findFirst({ where: { userId }, select: { id: true } });
+}
+
+/** Teaching-assignment sections for the signed-in user's staff record in the
+ *  given academic year (optionally narrowed to one subject). */
+export async function teachingSections(
+  userId: string,
+  academicYearId: string | null,
+): Promise<string[]> {
+  const staff = await staffForUser(userId);
+  if (!staff) return [];
+  const rows = await db.teachingAssignment.findMany({
+    where: {
+      staffId: staff.id,
+      ...(academicYearId ? { academicYearId } : {}),
+    },
+    select: { classSectionId: true },
+  });
+  return [...new Set(rows.map((r) => r.classSectionId))];
+}
+
+/** Whether the signed-in user's staff record teaches `subjectId` in
+ *  `sectionId` during `academicYearId` (the binding teaching contract). */
+export async function teachesSubject(
+  userId: string,
+  academicYearId: string,
+  classSectionId: string,
+  subjectId: string,
+): Promise<boolean> {
+  const staff = await staffForUser(userId);
+  if (!staff) return false;
+  const row = await db.teachingAssignment.findFirst({
+    where: { academicYearId, classSectionId, subjectId, staffId: staff.id },
+    select: { id: true },
+  });
+  return Boolean(row);
+}

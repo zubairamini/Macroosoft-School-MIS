@@ -159,6 +159,35 @@ const APPLICATIONS = [
   },
 ];
 
+// Phase-2 extra students so attendance rosters & gradebooks look real.
+const P2_STUDENTS: SeedStudent[] = [
+  {
+    firstName: "مهدی", fatherName: "شریف", grandfatherName: "بهرام",
+    gender: "male", birthDate: "2015-04-14", birthPlace: "کابل", grade: 4, sectionIdx: 0,
+    guardians: [{ fullName: "شریف سلطانی", relationship: "پدر", phone: "+93701234541", occupation: "برق‌کار", isPrimary: true }],
+  },
+  {
+    firstName: "سویا", fatherName: "طاهر", grandfatherName: "قربان",
+    gender: "female", birthDate: "2015-09-03", birthPlace: "کابل", grade: 4, sectionIdx: 0,
+    guardians: [{ fullName: "طاهر مهدوی", relationship: "پدر", phone: "+93701234542", occupation: "خانم خانه", isPrimary: true }],
+  },
+  {
+    firstName: "ایلت", fatherName: "ناصر", grandfatherName: "شریف",
+    gender: "female", birthDate: "2016-01-19", birthPlace: "کابل", grade: 4, sectionIdx: 0,
+    guardians: [{ fullName: "ناصر رحیم", relationship: "پدر", phone: "+93701234543", occupation: "معلم", isPrimary: true }],
+  },
+  {
+    firstName: "برهان", fatherName: "اله‌داد", grandfatherName: "میرزا",
+    gender: "male", birthDate: "2014-06-30", birthPlace: "کابل", grade: 5, sectionIdx: 0,
+    guardians: [{ fullName: "اله‌داد امین", relationship: "پدر", phone: "+93701234544", occupation: "تاجر", isPrimary: true }],
+  },
+  {
+    firstName: "ذکیه", fatherName: "غلام‌حیدر", grandfatherName: "فوز",
+    gender: "female", birthDate: "2014-11-11", birthPlace: "کابل", grade: 5, sectionIdx: 0,
+    guardians: [{ fullName: "غلام‌حیدر فوزی", relationship: "پدر", phone: "+93701234545", occupation: "خیاط", isPrimary: true }],
+  },
+];
+
 async function main() {
   console.log("🌱 Seeding synthetic Dari demonstration data…");
 
@@ -167,6 +196,13 @@ async function main() {
     db.notification.deleteMany(),
     db.outboxEvent.deleteMany(),
     db.auditEvent.deleteMany(),
+    db.grade.deleteMany(),
+    db.assessment.deleteMany(),
+    db.attendanceRecord.deleteMany(),
+    db.attendanceSession.deleteMany(),
+    db.timetableSlot.deleteMany(),
+    db.teachingAssignment.deleteMany(),
+    db.staffMember.deleteMany(),
     db.studentDocument.deleteMany(),
     db.enrollment.deleteMany(),
     db.studentGuardian.deleteMany(),
@@ -344,7 +380,7 @@ async function main() {
   // ── Students + guardians + enrollments ───────────────────────────────────
   const guardianByPhone: Record<string, { id: string }> = {};
   let studentSeq = 0;
-  const all = [...STUDENTS, ...SIBLINGS];
+  const all = [...STUDENTS, ...SIBLINGS, ...P2_STUDENTS];
   for (const s of all) {
     studentSeq += 1;
     const studentNumber = `S-1405-${String(studentSeq).padStart(4, "0")}`;
@@ -416,8 +452,8 @@ async function main() {
     });
   }
 
-  // Teacher assignment: خالد حسینی teaches grade 4-الف and 5-الف.
-  const teacherSections = [sections["4-0"].id, sections["5-0"].id];
+  // Teacher assignment: خالد حسینی teaches 4-الف, 4-ب and 5-الف.
+  const teacherSections = [sections["4-0"].id, sections["4-1"].id, sections["5-0"].id];
   await db.userRole.updateMany({
     where: { userId: userRows.teacher.id },
     data: { sectionIds: JSON.stringify(teacherSections) },
@@ -574,6 +610,280 @@ async function main() {
         after: JSON.stringify({ demo: true, note: "داده‌های نمایشی مصنوعی" }),
         ip: "127.0.0.1",
       },
+    ],
+  });
+
+  // ── Phase 2: staff register ───────────────────────────────────────────
+  // خالد حسینی (existing `teacher` user) becomes a linked StaffMember.
+  const khaled = await db.staffMember.create({
+    data: {
+      orgId: org.id,
+      branchId: mainBranch.id,
+      userId: userRows.teacher.id,
+      fullName: "استاد خالد حسینی",
+      fatherName: "نظرحسین",
+      gender: "male",
+      birthDate: "1990-05-12",
+      phone: "+93700111201",
+      address: "کابل، کارتهٔ نو",
+      position: "teacher",
+      qualification: "لیسانس ریاضی — دانشگاه تعلیم و تربیه کابل",
+      hireDate: "2022-03-01",
+      employmentType: "full_time",
+      status: "active",
+    },
+  });
+  const nargis = await db.staffMember.create({
+    data: {
+      orgId: org.id, branchId: mainBranch.id,
+      fullName: "محترمه نرگس جان آصفی", fatherName: "محب",
+      gender: "female", birthDate: "1993-02-08", phone: "+93700111202",
+      position: "teacher", qualification: "لیسانس ادبیات دری",
+      hireDate: "2023-03-01", employmentType: "full_time", status: "active",
+    },
+  });
+  const akmal = await db.staffMember.create({
+    data: {
+      orgId: org.id, branchId: mainBranch.id,
+      fullName: "محمد اکمل صافی", fatherName: "عبدالرحیم",
+      gender: "male", birthDate: "1988-09-25", phone: "+93700111203",
+      position: "teacher", qualification: "لیسانس زبان انگلیسی",
+      hireDate: "2021-09-01", employmentType: "full_time", status: "active",
+    },
+  });
+  // Admin/support staff linked to their existing portal accounts.
+  const adminStaffRows = [
+    { user: userRows.manager, fullName: "استاد عبدالقادر برات", fatherName: "شاهد", gender: "male", birthDate: "1979-07-04", position: "admin_staff", qualification: "لیسانس مدیریت" },
+    { user: userRows.academic, fullName: "استاد سمیع‌الله نوری", fatherName: "غلام‌حیدر", gender: "male", birthDate: "1982-11-17", position: "admin_staff", qualification: "لیسانس تعلیم و تربیه" },
+    { user: userRows.registrar, fullName: "محترمه نعیمه صمدی", fatherName: "یوسف", gender: "female", birthDate: "1995-01-23", position: "admin_staff", qualification: "دیپلم حسابداری و ثبت" },
+    { user: userRows.finance, fullName: "محترم حبیب‌الله رفیعی", fatherName: "قاسم", gender: "male", birthDate: "1986-03-30", position: "admin_staff", qualification: "لیسانس اقتصاد" },
+    { user: userRows.librarian, fullName: "محترم ظاهر شریفی", fatherName: "داوود", gender: "male", birthDate: "1991-12-09", position: "support", qualification: "دیپلم لیسه" },
+  ];
+  for (const s of adminStaffRows) {
+    await db.staffMember.create({
+      data: {
+        orgId: org.id, branchId: mainBranch.id, userId: s.user.id,
+        fullName: s.fullName, fatherName: s.fatherName, gender: s.gender,
+        birthDate: s.birthDate, phone: `+9370011${Math.floor(Math.random() * 90000 + 10000)}`,
+        position: s.position, qualification: s.qualification,
+        hireDate: "2022-03-01", employmentType: "full_time", status: "active",
+      },
+    });
+  }
+
+  // ── Phase 2: teaching assignments ────────────────────────────────────
+  const subj = {
+    dari: await db.subject.findFirstOrThrow({ where: { code: "DARI" } }),
+    math: await db.subject.findFirstOrThrow({ where: { code: "MATH" } }),
+    sci: await db.subject.findFirstOrThrow({ where: { code: "SCI" } }),
+    eng: await db.subject.findFirstOrThrow({ where: { code: "ENG" } }),
+  };
+  const assignments = [
+    { staff: khaled, subject: subj.math, sections: ["4-0", "4-1", "5-0"] },
+    { staff: khaled, subject: subj.sci, sections: ["4-0", "5-0"] },
+    { staff: nargis, subject: subj.dari, sections: ["3-0", "4-0", "4-1", "5-0"] },
+    { staff: akmal, subject: subj.eng, sections: ["4-0", "4-1", "5-0"] },
+  ];
+  for (const a of assignments) {
+    for (const key of a.sections) {
+      const sec = sections[key];
+      if (!sec) continue;
+      await db.teachingAssignment.create({
+        data: {
+          academicYearId: year1405.id,
+          classSectionId: sec.id,
+          subjectId: a.subject.id,
+          staffId: a.staff.id,
+          createdById: userRows.academic.id,
+        },
+      });
+    }
+  }
+
+  // ── Phase 2: weekly timetable for 4-الف and 5-الف ─────────────────────
+  // Rotation avoids teacher clashes: خالد(ریاضی/علوم), نرگس(دری), اکمل(انگلیسی)
+  const plan40 = [subj.dari, subj.math, subj.sci, subj.eng];
+  const plan50 = [subj.sci, subj.eng, subj.dari, subj.math];
+  const staffOf = (s: { id: string; code: string }) =>
+    s.code === "DARI" ? nargis : s.code === "MATH" || s.code === "SCI" ? khaled : akmal;
+  for (let weekday = 0; weekday <= 4; weekday++) {
+    for (let p = 0; p < 4; p++) {
+      await db.timetableSlot.create({
+        data: {
+          classSectionId: sections["4-0"].id, weekday, period: p + 1,
+          subjectId: plan40[p].id, staffId: staffOf(plan40[p]).id,
+          roomName: `اتاق 4${1}`,
+          createdById: userRows.academic.id,
+        },
+      });
+      await db.timetableSlot.create({
+        data: {
+          classSectionId: sections["5-0"].id, weekday, period: p + 1,
+          subjectId: plan50[p].id, staffId: staffOf(plan50[p]).id,
+          roomName: "اتاق 51",
+          createdById: userRows.academic.id,
+        },
+      });
+    }
+  }
+
+  // ── Phase 2: attendance history (last school week) ────────────────────
+  // Whole-day sessions; submitted ones count in statistics, one open today.
+  const studentsOf = async (key: string) =>
+    db.enrollment.findMany({
+      where: { classSectionId: sections[key].id, status: "active" },
+      include: { student: true },
+      orderBy: { rollNumber: "asc" },
+    });
+
+  const attendanceDays = [
+    { date: "2026-11-01", submit: true },
+    { date: "2026-11-02", submit: true },
+    { date: "2026-11-03", submit: true },
+    { date: "2026-11-04", submit: true },
+    { date: "2026-11-05", submit: true },
+  ];
+  for (const key of ["4-0", "4-1", "5-0"]) {
+    const roster = await studentsOf(key);
+    for (const day of attendanceDays) {
+      const session = await db.attendanceSession.create({
+        data: {
+          classSectionId: sections[key].id,
+          date: day.date,
+          period: 0,
+          status: "submitted",
+          recordedById: khaled.id,
+          submittedById: khaled.id,
+          submittedAt: new Date(),
+        },
+      });
+      let i = 0;
+      for (const e of roster) {
+        // 4th student absent every other day; one excused; one late pattern.
+        let status: "present" | "absent" | "late" | "excused" = "present";
+        if (i === 3 && (day.date === "2026-11-02" || day.date === "2026-11-04")) status = "absent";
+        else if (i === 1 && day.date === "2026-11-03") status = "late";
+        else if (i === 2 && day.date === "2026-11-05") status = "excused";
+        await db.attendanceRecord.create({
+          data: { sessionId: session.id, studentId: e.student.id, status },
+        });
+        i += 1;
+      }
+    }
+    // Today's session still open (demonstrates the record → submit flow).
+    await db.attendanceSession.create({
+      data: {
+        classSectionId: sections[key].id,
+        date: "2026-11-06",
+        period: 0,
+        status: "open",
+        recordedById: khaled.id,
+      },
+    });
+  }
+
+  // ── Phase 2: assessments & grades ─────────────────────────────────────
+  async function addAssessment(opts: {
+    sectionKey: string; subject: { id: string }; staff: { id: string };
+    title: string; type: string; maxScore: number; weight: number;
+    date: string; status: string;
+    scores: Array<{ studentNumber: string; score: number | null; isAbsent?: boolean }>;
+  }) {
+    const sec = sections[opts.sectionKey];
+    const a = await db.assessment.create({
+      data: {
+        orgId: org.id,
+        academicYearId: year1405.id,
+        classSectionId: sec.id,
+        subjectId: opts.subject.id,
+        staffId: opts.staff.id,
+        title: opts.title,
+        type: opts.type,
+        date: opts.date,
+        maxScore: opts.maxScore,
+        weight: opts.weight,
+        status: opts.status,
+        createdById: userRows.academic.id,
+        ...(opts.status === "published" ? {
+          publishedById: userRows.manager.id,
+          publishedAt: new Date(),
+          gradingPolicy: JSON.stringify({ maxScore: opts.maxScore, weight: opts.weight, type: opts.type }),
+        } : {}),
+      },
+    });
+    for (const s of opts.scores) {
+      const st = await db.student.findFirst({ where: { studentNumber: s.studentNumber } });
+      if (!st) continue;
+      await db.grade.create({
+        data: {
+          assessmentId: a.id,
+          studentId: st.id,
+          score: s.score,
+          isAbsent: s.isAbsent ?? false,
+          enteredById: userRows.teacher.id,
+          enteredAt: new Date(),
+        },
+      });
+    }
+    return a;
+  }
+
+  // Published midterm — ریاضی, section 4-0 (all graded).
+  await addAssessment({
+    sectionKey: "4-0", subject: subj.math, staff: khaled,
+    title: "امتحان میان‌ترم ریاضی — نیم‌سال اول", type: "midterm",
+    maxScore: 40, weight: 2, date: "2026-09-10", status: "published",
+    scores: [
+      { studentNumber: "S-1405-0003", score: 36 },
+      { studentNumber: "S-1405-0011", score: 31 },
+      { studentNumber: "S-1405-0012", score: 24 },
+      { studentNumber: "S-1405-0013", score: 28 },
+    ],
+  });
+  // Published quiz — دری, section 4-0 (one student was absent on exam day).
+  await addAssessment({
+    sectionKey: "4-0", subject: subj.dari, staff: nargis,
+    title: "کوئیز درس اول — امالی و انشاء", type: "quiz",
+    maxScore: 10, weight: 1, date: "2026-10-18", status: "published",
+    scores: [
+      { studentNumber: "S-1405-0003", score: 9 },
+      { studentNumber: "S-1405-0011", score: 8 },
+      { studentNumber: "S-1405-0012", score: null, isAbsent: true },
+      { studentNumber: "S-1405-0013", score: 10 },
+    ],
+  });
+  // Grading in progress — ریاضی quiz, section 4-0 (missing ≠ zero demo:
+  // two students not yet graded).
+  await addAssessment({
+    sectionKey: "4-0", subject: subj.math, staff: khaled,
+    title: "کوئیز ضرب و تقسیم", type: "quiz",
+    maxScore: 10, weight: 1, date: "2026-11-02", status: "grading",
+    scores: [
+      { studentNumber: "S-1405-0003", score: 10 },
+      { studentNumber: "S-1405-0011", score: 7 },
+    ],
+  });
+  // Published midterm for 4-1 (parent/مینا demo) and 5-0.
+  await addAssessment({
+    sectionKey: "4-1", subject: subj.math, staff: khaled,
+    title: "امتحان میان‌ترم ریاضی — نیم‌سال اول", type: "midterm",
+    maxScore: 40, weight: 2, date: "2026-09-10", status: "published",
+    scores: [{ studentNumber: "S-1405-0009", score: 33 }],
+  });
+  await addAssessment({
+    sectionKey: "4-1", subject: subj.dari, staff: nargis,
+    title: "کوئیز امالی — حروف و حرکات", type: "quiz",
+    maxScore: 10, weight: 1, date: "2026-10-20", status: "published",
+    scores: [{ studentNumber: "S-1405-0009", score: 9 }],
+  });
+  await addAssessment({
+    sectionKey: "5-0", subject: subj.math, staff: khaled,
+    title: "امتحان میان‌ترم ریاضی — نیم‌سال اول", type: "midterm",
+    maxScore: 40, weight: 2, date: "2026-09-11", status: "published",
+    scores: [
+      { studentNumber: "S-1405-0001", score: 38 },
+      { studentNumber: "S-1405-0014", score: 27 },
+      { studentNumber: "S-1405-0015", score: 33 },
     ],
   });
 

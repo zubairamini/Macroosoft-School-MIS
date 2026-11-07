@@ -3,7 +3,7 @@
 
 import { db } from "@/lib/db";
 import { studentListWhere } from "@/server/rbac/scope";
-import { todayIsoKabul, jalaliWeekdayName, formatJalali } from "@/server/shared/jalali";
+import { todayIsoKabul, jalaliWeekdayName, formatJalali, afghanWeekdayIndex } from "@/server/shared/jalali";
 import type { AuthContext } from "@/server/auth/context";
 import { can } from "@/server/rbac/scope";
 
@@ -148,6 +148,105 @@ export async function dashboardSummary(ctx: AuthContext) {
     where: { userId: ctx.user.id, isRead: false },
   });
   base.unreadNotifications = unread;
+
+  // ── Phase 2: teaching KPIs (teacher with a linked staff record) ────────
+  if (can(ctx, "attendance.record") || can(ctx, "timetable.view")) {
+    const staff = await db.staffMember.findFirst({
+      where: { userId: ctx.user.id },
+      select: { id: true },
+    });
+    if (staff) {
+      const today = todayIsoKabul();
+      const ownIds = new Set(sectionIds);
+      // Today's open attendance sessions in the teacher's sections — the
+      // "record it before it locks" nudge.
+      const openToday = await db.attendanceSession.findMany({
+        where: {
+          date: today,
+          status: "open",
+          ...(ownIds.size > 0 ? { classSectionId: { in: [...ownIds] } } : { recordedById: staff.id }),
+        },
+        include: {
+          classSection: { select: { id: true, label: true, gradeLevel: { select: { nameDari: true } } } },
+        },
+        take: 6,
+      });
+      base.attendanceToday = openToday.map((s) => ({
+        id: s.id,
+        sectionId: s.classSection.id,
+        gradeName: s.classSection.gradeLevel.nameDari,
+        sectionLabel: s.classSection.label,
+      }));
+      // Next classes today from the weekly timetable (Afghan weekday index).
+      const weekday = afghanWeekdayIndex(today);
+      if (weekday >= 0) {
+        const nextSlots = await db.timetableSlot.findMany({
+          where: { staffId: staff.id, weekday },
+          include: {
+            classSection: { select: { label: true, gradeLevel: { select: { nameDari: true } } } },
+            subject: { select: { nameDari: true } },
+          },
+          orderBy: { period: "asc" },
+        });
+        base.todayClasses = nextSlots.map((t) => ({
+          period: t.period,
+          subjectName: t.subject?.nameDari ?? "—",
+          gradeName: t.classSection.gradeLevel.nameDari,
+          sectionLabel: t.classSection.label,
+          roomName: t.roomName,
+        }));
+      }
+    }
+  }
+
+  // ── Phase 2: recent published grades (student / parent portals) ────────
+  if (can(ctx, "grades.view") && (ctx.linkedStudentId || ctx.guardianId)) {
+    const studentIds = ctx.linkedStudentId
+      ? [ctx.linkedStudentId]
+      : ctx.guardianId
+        ? (await db.studentGuardian.findMany({
+            where: { guardianId: ctx.guardianId, contactRights: true },
+            select: { studentId: true },
+          })).map((l) => l.studentId)
+        : [];
+    if (studentIds.length > 0) {
+      const rows = await db.grade.findMany({
+        where: { studentId: { in: studentIds }, assessment: { status: "published" } },
+        include: {
+          assessment: {
+            select: { id: true, title: true, maxScore: true, subject: { select: { nameDari: true } } },
+          },
+          student: { select: { id: true, personal: true } },
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 6,
+      });
+      base.recentGrades = rows.map((r) => {
+        let firstName = "";
+        try { firstName = JSON.parse(r.student.personal).firstName ?? ""; } catch { /* noop */ }
+        return {
+          studentId: r.studentId,
+          firstName,
+          title: r.assessment.title,
+          subjectName: r.assessment.subject.nameDari,
+          score: r.score,
+          maxScore: r.assessment.maxScore,
+          isAbsent: r.isAbsent,
+          at: r.updatedAt,
+        };
+      });
+    }
+  }
+
+  // ── Phase 2: attendance KPIs for managers (branch overview) ────────────
+  if (can(ctx, "attendance.view") && !can(ctx, "attendance.record") && currentYear) {
+    const today = todayIsoKabul();
+    const [submittedToday, openTodayCount] = await Promise.all([
+      db.attendanceSession.count({ where: { date: today, status: "submitted" } }),
+      db.attendanceSession.count({ where: { date: today, status: "open" } }),
+    ]);
+    base.attendanceOverviewToday = { submitted: submittedToday, open: openTodayCount };
+  }
 
   return base;
 }

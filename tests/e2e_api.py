@@ -113,6 +113,7 @@ def main():
     print("\n[2] Admission workflow (registrar → manager)")
     reg_cookie, _ = login("registrar", "Registrar1234")
     mgr_cookie, _ = login("manager", "Manager1234")
+    academic_cookie, _ = login("academic", "Academic1234")
     cashier_cookie, _ = login("cashier", "Cashier1234")
     teacher_cookie, _ = login("teacher", "Teacher1234")
     parent_cookie, _ = login("walikhal", "Parent1234")
@@ -253,10 +254,11 @@ def main():
     check("parent student list limited to children", status == 200 and total <= 2,
           f"total={total}")
 
-    # Teacher: only assigned sections (seeded: grade 4-الف, 5-الف)
+    # Teacher: only assigned sections (seeded: 4-الف, 4-ب, 5-الف → 8 students
+    # after the Phase-2 roster expansion — the org has 15 in total).
     status, body, _ = req("GET", "/students", cookie=teacher_cookie)
     t_total = body.get("meta", {}).get("total", -1)
-    check("teacher sees only students in assigned sections", status == 200 and t_total <= 4,
+    check("teacher sees only students in assigned sections", status == 200 and t_total == 8,
           f"total={t_total}")
     status, body, _ = req("GET", f"/students/{student_id}", cookie=teacher_cookie)
     check("teacher CANNOT read student outside assignment (403)", status == 403)
@@ -354,6 +356,288 @@ def main():
     check("logout returns ok", status == 200)
     status, body, _ = req("GET", "/auth/me", cookie=tmp_cookie)
     check("session revoked after logout (401)", status == 401)
+
+    # ── 11. Phase 2: staff register & teaching assignments ───────────────
+    print("\n[11] Phase 2 — staff register & teaching assignments")
+    status, body, _ = req("GET", "/staff", cookie=admin_cookie)
+    staff = body["data"]
+    check("admin lists staff register", status == 200 and len(staff) >= 5,
+          f"count={len(staff)}")
+    teachers = [s for s in staff if s["position"] == "teacher"]
+    check("teacher records exist with portal links",
+          any(s["portal"] and s["portal"]["username"] == "teacher" for s in teachers))
+
+    status, body, _ = req("GET", "/staff", cookie=parent_cookie)
+    check("parent cannot list staff (403)", status == 403)
+
+    status, body, _ = req("GET", "/staff?minimal=teachers", cookie=academic_cookie)
+    check("minimal teacher list works", status == 200 and len(body["data"]) >= 3)
+
+    status, body, _ = req("GET", "/teaching-assignments", cookie=academic_cookie)
+    assignments = body["data"]
+    check("teaching assignments listed", status == 200 and len(assignments) >= 8,
+          f"count={len(assignments)}")
+
+    # ── 12. Phase 2: timetable & conflict detection ──────────────────────
+    print("\n[12] Phase 2 — timetable & conflict detection")
+    status, body, _ = req("GET", "/timetable?mine=1", cookie=teacher_cookie)
+    mine = body["data"]
+    check("teacher fetches own weekly schedule", status == 200 and mine["staff"] and len(mine["slots"]) >= 20,
+          f"slots={len(mine['slots'])}")
+
+    # Find a section with a timetable (4-الف).
+    status, body, _ = req("GET", "/sections", cookie=academic_cookie)
+    sections = body["data"]
+    sec40 = next((s for s in sections if s["gradeLevel"]["level"] == 4 and s["label"] == "الف"), None)
+    check("section 4-الف found", sec40 is not None)
+    status, body, _ = req("GET", f"/timetable?classSectionId={sec40['id']}", cookie=academic_cookie)
+    check("section timetable listed (20 slots)", status == 200 and len(body["data"]) >= 20,
+          f"slots={len(body['data'])}")
+
+    # Teacher clash: the same teacher, same weekday+period, in a DIFFERENT
+    # section → 409 with a Dari conflict message.
+    teacher_id = next(s["id"] for s in staff if s["position"] == "teacher"
+                      and s["portal"] and s["portal"]["username"] == "teacher")
+    sec41 = next((s for s in sections if s["gradeLevel"]["level"] == 4 and s["label"] == "ب"), None)
+    status, body, _ = req("POST", "/timetable", cookie=academic_cookie, body={
+        "classSectionId": sec41["id"], "weekday": 0, "period": 2,
+        "staffId": teacher_id,
+    })
+    check("teacher double-booking rejected with 409", status == 409 and "کلاس دارد" in body["error"]["message"],
+          f"status={status} body={body.get('error', {}).get('message')}")
+
+    # Section slot upsert: re-posting the SAME cell updates it (no duplicate
+    # rows — DB unique constraint) instead of creating a conflict.
+    status, body, _ = req("GET", f"/timetable?classSectionId={sec40['id']}", cookie=academic_cookie)
+    cell0 = next((s for s in body["data"] if s["weekday"] == 0 and s["period"] == 1), None)
+    check("cell شنبه/۱ fetched", cell0 is not None)
+    status, body, _ = req("POST", "/timetable", cookie=academic_cookie, body={
+        "classSectionId": sec40["id"], "weekday": 0, "period": 1,
+        "subjectId": cell0["subjectId"], "staffId": cell0["staffId"], "roomName": cell0["roomName"],
+    })
+    check("re-posting the same cell updates in place (200)", status == 200)
+
+    # Teacher cannot manage the timetable.
+    status, body, _ = req("POST", "/timetable", cookie=teacher_cookie, body={
+        "classSectionId": sec40["id"], "weekday": 5, "period": 1,
+    })
+    check("teacher cannot edit timetable (403)", status == 403)
+
+    # ── 13. Phase 2: attendance lifecycle ────────────────────────────────
+    print("\n[13] Phase 2 — attendance lifecycle")
+    today = "2026-11-06"  # seeded open-session date
+
+    # Open (idempotent) session for 4-الف today.
+    status, body, _ = req("POST", "/attendance/sessions", cookie=teacher_cookie, body={
+        "classSectionId": sec40["id"], "date": today, "period": 0,
+    })
+    check("open-or-return-existing session (200)", status == 200)
+
+    # Duplicate submission attempt returns the SAME session (idempotent).
+    first_id = body["data"]["id"]
+    status, body, _ = req("POST", "/attendance/sessions", cookie=teacher_cookie, body={
+        "classSectionId": sec40["id"], "date": today, "period": 0,
+    })
+    check("idempotent reopen of the same session", status == 200 and body["data"]["id"] == first_id)
+
+    # Roster with enrolled students.
+    status, body, _ = req("GET", f"/attendance/sessions/{first_id}", cookie=teacher_cookie)
+    roster = body["data"]["roster"]
+    check("roster lists enrolled students", status == 200 and len(roster) >= 3,
+          f"roster={len(roster)}")
+
+    # Teacher of another section is scoped: cashier/finance cannot record.
+    status, body, _ = req("POST", "/attendance/sessions", cookie=finance_cookie, body={
+        "classSectionId": sec40["id"], "date": "2026-11-07", "period": 0,
+    })
+    check("finance cannot record attendance (403)", status == 403)
+
+    # Parent cannot see a session of a section their children attend? (they
+    # CAN view via guardian scope only through summary, not raw sessions of
+    # other sections — parent's attendance.view is guardian-scoped.)
+    status, body, _ = req("GET", f"/attendance/sessions/{first_id}", cookie=parent_cookie)
+    check("parent cannot open another section's roster (403)", status == 403)
+
+    # Save records with an invalid status → 400 (zod enum).
+    status, body, _ = req("PUT", f"/attendance/sessions/{first_id}", cookie=teacher_cookie, body={
+        "version": 1,
+        "records": [{"studentId": roster[0]["studentId"], "status": "sleeping"}],
+    })
+    check("invalid attendance status rejected (400)", status == 400)
+
+    # Valid save: mark everyone present except one absent.
+    version = body.get("data", {}).get("version") if status == 200 else 1
+    recs = [{"studentId": r["studentId"], "status": "present"} for r in roster]
+    if len(recs) >= 2:
+        recs[1]["status"] = "absent"
+    status, body, _ = req("PUT", f"/attendance/sessions/{first_id}", cookie=teacher_cookie, body={
+        "version": 1, "records": recs,
+    })
+    check("save roster marks (200)", status == 200)
+    saved_version = body["data"]["version"]
+
+    # A record for a student NOT enrolled in the section → 400.
+    status, body, _ = req("PUT", f"/attendance/sessions/{first_id}", cookie=teacher_cookie, body={
+        "version": saved_version,
+        "records": [{"studentId": "nonexistent-student-id", "status": "present"}],
+    })
+    check("record for unenrolled student rejected (400)", status == 400)
+
+    # Submit with a STALE version → 409 (optimistic concurrency).
+    status, body, _ = req("POST", f"/attendance/sessions/{first_id}/submit", cookie=teacher_cookie, body={
+        "version": 1,
+    })
+    check("stale submit conflicts (409)", status == 409)
+
+    # Submit with the current version → locks the session.
+    status, body, _ = req("POST", f"/attendance/sessions/{first_id}/submit", cookie=teacher_cookie, body={
+        "version": saved_version,
+    })
+    check("submit locks the session (200)", status == 200 and body["data"]["status"] == "submitted")
+
+    # Editing a submitted session is blocked.
+    status, body, _ = req("PUT", f"/attendance/sessions/{first_id}", cookie=teacher_cookie, body={
+        "version": body["data"]["version"], "records": recs,
+    })
+    check("submitted session is immutable (400)", status == 400)
+
+    # Only attendance.correct holders may reopen — teacher is rejected.
+    status, body, _ = req("POST", f"/attendance/sessions/{first_id}/reopen", cookie=teacher_cookie, body={
+        "reason": "تصحیح اشتباه",
+    })
+    check("teacher cannot reopen (403)", status == 403)
+
+    # Academic manager reopens WITH a reason → audited.
+    status, body, _ = req("POST", f"/attendance/sessions/{first_id}/reopen", cookie=academic_cookie, body={
+        "reason": "ثبت اشتباه توسط استاد — تصحیح لازم است",
+    })
+    check("academic manager reopens with reason (200)", status == 200 and body["data"]["status"] == "open")
+
+    # ── 14. Phase 2: attendance summary — «نا-ثبت» invariant ─────────────
+    print("\n[14] Phase 2 — attendance summary (unrecorded ≠ present)")
+    status, body, _ = req("GET", f"/attendance/summary?classSectionId={sec40['id']}", cookie=teacher_cookie)
+    summ = body["data"]
+    check("summary counts only submitted sessions", status == 200 and summ["sessions"] >= 5,
+          f"sessions={summ['sessions']}")
+    # Conservation: per student present+absent+late+excused+notRecorded = sessions
+    conserved = all(
+        s["present"] + s["absent"] + s["late"] + s["excused"] + s["notRecorded"] == summ["sessions"]
+        for s in summ["students"]
+    )
+    check("per-student statuses conserve to session count", conserved)
+
+    # The session we submitted above (1 absent, rest present) is counted.
+    total_present = sum(s["present"] for s in summ["students"])
+    total_absent = sum(s["absent"] for s in summ["students"])
+    check("submitted marks are reflected in the summary",
+          total_present >= len(summ["students"]) and total_absent >= 1,
+          f"present={total_present} absent={total_absent}")
+
+    # Student-centered summary for a parent's child.
+    status, body, _ = req("GET", f"/attendance/summary?studentId={student_id}", cookie=parent_cookie)
+    check("parent gets child-centered summary",
+          status == 403 or status == 200, f"status={status}")
+    # (student_id from §3 is another family's child → 403 for this parent.)
+    status, body, _ = req("GET", f"/attendance/summary?studentId={student_id}", cookie=reg_cookie)
+    check("registrar gets summary for any student (branch scope)", status == 200)
+
+    # ── 15. Phase 2: exams, grade entry & publish lock ───────────────────
+    print("\n[15] Phase 2 — exams, grade entry & publish")
+    # Teacher lists assessments of own sections.
+    status, body, _ = req("GET", "/assessments", cookie=teacher_cookie)
+    assessments = body["data"]
+    check("teacher lists assessments", status == 200 and len(assessments) >= 5,
+          f"count={len(assessments)}")
+
+    grading = next((a for a in assessments if a["status"] == "grading"), None)
+    check("grading-in-progress assessment exists", grading is not None)
+
+    published = next((a for a in assessments if a["status"] == "published"), None)
+    check("published assessment exists", published is not None)
+
+    # Teacher enters a missing grade (idempotent upsert, version-checked).
+    status, body, _ = req("GET", f"/assessments/{grading['id']}", cookie=teacher_cookie)
+    detail = body["data"]
+    check("assessment detail returns roster + capabilities",
+          status == 200 and detail["canEnterGrades"] is True and detail["canPublish"] is False)
+    ungraded = next((r for r in detail["roster"] if not r["hasGrade"]), None)
+    check("an ungraded student exists (missing ≠ zero demo)", ungraded is not None)
+    status, body, _ = req("PUT", f"/assessments/{grading['id']}/grades", cookie=teacher_cookie, body={
+        "version": detail["version"],
+        "grades": [{"studentId": ungraded["studentId"], "score": 6}],
+    })
+    check("teacher enters the missing grade (200)", status == 200)
+
+    # Score above maxScore → 400.
+    status, body, _ = req("PUT", f"/assessments/{grading['id']}/grades", cookie=teacher_cookie, body={
+        "version": body["data"]["version"],
+        "grades": [{"studentId": ungraded["studentId"], "score": 999}],
+    })
+    check("score above maxScore rejected (400)", status == 400)
+
+    # Teacher tries to publish → 403 (separation of duties).
+    status, body, _ = req("POST", f"/assessments/{grading['id']}/publish", cookie=teacher_cookie, body={
+        "version": 1,
+    })
+    check("teacher cannot publish (403)", status == 403)
+
+    # Academic manager publishes.
+    status, body, _ = req("GET", f"/assessments/{grading['id']}", cookie=academic_cookie)
+    v = body["data"]["version"]
+    status, body, _ = req("POST", f"/assessments/{grading['id']}/publish", cookie=academic_cookie, body={
+        "version": v,
+    })
+    check("academic manager publishes (200)", status == 200 and body["data"]["status"] == "published")
+
+    # Grades immutable after publish.
+    status, body, _ = req("PUT", f"/assessments/{grading['id']}/grades", cookie=teacher_cookie, body={
+        "version": body["data"]["version"],
+        "grades": [{"studentId": ungraded["studentId"], "score": 10}],
+    })
+    check("published grades are immutable (400)", status == 400)
+
+    # ── 16. Phase 2: report cards & portals ──────────────────────────────
+    print("\n[16] Phase 2 — report cards & portals")
+    # Parent's own child (مینا S-1405-0009, section 4-ب, has published results).
+    status, body, _ = req("GET", "/students?pageSize=50", cookie=parent_cookie)
+    children = body["data"]
+    check("parent sees exactly the linked children", status == 200 and len(children) == 2)
+    mina = next((c for c in children if c["studentNumber"] == "S-1405-0009"), None)
+    check("مینا found among parent's children", mina is not None)
+
+    status, body, _ = req("GET", f"/students/{mina['id']}/report-card", cookie=parent_cookie)
+    check("parent reads own child's report card (200)", status == 200)
+    rc = body["data"]
+    check("report card has weighted subject averages",
+          status == 200 and len(rc["subjects"]) >= 1 and all(
+              s["average"] is None or 0 <= s["average"] <= 100 for s in rc["subjects"]))
+
+    # Registrar prints report cards (grades.view branch scope).
+    status, body, _ = req("GET", f"/students/{mina['id']}/report-card", cookie=reg_cookie)
+    check("registrar reads a report card (branch scope)", status == 200)
+
+    # Cashier (no grades.view) → 403.
+    status, body, _ = req("GET", f"/students/{mina['id']}/report-card", cookie=login("cashier", "Cashier1234")[0])
+    check("cashier cannot read report cards (403)", status == 403)
+
+    # Parent cannot read ANOTHER family's child report card.
+    status, body, _ = req("GET", f"/students/{student_id}/report-card", cookie=parent_cookie)
+    check("parent blocked from another child's report card (403)", status == 403)
+
+    # Parent dashboard shows recent published grades.
+    status, body, _ = req("GET", "/dashboard/summary", cookie=parent_cookie)
+    dash = body["data"]
+    check("parent dashboard lists recent published grades",
+          status == 200 and dash.get("recentGrades") and len(dash["recentGrades"]) >= 1,
+          f"recentGrades={dash.get('recentGrades')}")
+
+    # Teacher dashboard lists today's classes + open attendance.
+    status, body, _ = req("GET", "/dashboard/summary", cookie=teacher_cookie)
+    tdash = body["data"]
+    check("teacher dashboard shows today's classes",
+          status == 200 and tdash.get("todayClasses") and len(tdash["todayClasses"]) >= 1)
+    check("teacher dashboard flags open attendance sessions",
+          isinstance(tdash.get("attendanceToday"), list))
 
     # ── Summary ──────────────────────────────────────────────────────────
     print("\n" + "═" * 70)

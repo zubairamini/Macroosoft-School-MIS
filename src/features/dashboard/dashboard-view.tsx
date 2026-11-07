@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, GraduationCap, School, TrendingUp, ClipboardList, UserCheck,
-  Users2, ArrowLeft, AlertCircle, History,
+  Users2, ArrowLeft, AlertCircle, History, ClipboardCheck, CalendarClock, Award,
 } from "lucide-react";
 import { useDashboard, useMe } from "@/lib/api/hooks";
 import { KpiCard, EmptyState, StatusBadge, Ltr } from "@/components/shared";
@@ -120,9 +120,48 @@ export function DashboardView() {
           )}
         </section>
         <p className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-xs leading-6 text-amber-800">
-          پورتال ولی: نمرات و حاضری پس از انتشار رسمی در مرحله‌های بعدی نمایش داده می‌شود.
+          پورتال ولی: نمرات و حاضری فقط پس از انتشار رسمی نمایش داده می‌شود.
           معلومات سایر شاگردان هرگز در دسترس نیست.
         </p>
+
+        {d.recentGrades && d.recentGrades.length > 0 ? (
+          <section>
+            <h2 className="mb-3 flex items-center gap-2 text-base font-semibold">
+              <Award className="h-4 w-4 text-primary" /> نتایج منتشرشدهٔ اخیر
+            </h2>
+            <Card>
+              <CardContent className="p-0">
+                <ul className="divide-y divide-border">
+                  {d.recentGrades.map((g, i) => (
+                    <li
+                      key={`${g.studentId}-${i}`}
+                      className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-4 py-3 transition-soft hover:bg-primary/5"
+                      onClick={() => navigate(`/students/${g.studentId}`)}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{g.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {g.firstName} · {g.subjectName}
+                        </p>
+                      </div>
+                      <span className="shrink-0 tabular-nums text-sm font-bold">
+                        {g.isAbsent ? (
+                          <span className="text-red-700">غیرحاضر در امتحان</span>
+                        ) : g.score !== null ? (
+                          <>
+                            {faNum(g.score)} <span className="text-xs font-normal text-muted-foreground">از {faNum(g.maxScore)}</span>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">نا-ثبت</span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          </section>
+        ) : null}
       </div>
     );
   }
@@ -221,15 +260,15 @@ export function DashboardView() {
           </Card>
         ) : null}
 
-        {/* Teacher's sections */}
+        {/* Teacher's sections + today's schedule (Phase 2) */}
         {d.assignedSections && d.assignedSections.length > 0 ? (
           <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle className="text-base">شعبه‌های صنف من (استاد)</CardTitle>
               <CardDescription>شعبه‌هایی که به شما تخصیص داده شده است</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid gap-3 sm:grid-cols-2">
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-3">
                 {d.assignedSections.map((s) => (
                   <div key={s.id} className="flex items-center justify-between rounded-lg border border-border p-3">
                     <div>
@@ -240,9 +279,75 @@ export function DashboardView() {
                   </div>
                 ))}
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">
-                ثبت حاضری و نمرات برای این شعبه‌ها در مرحلهٔ دوم فعال می‌شود.
-              </p>
+
+              {d.todayClasses && d.todayClasses.length > 0 ? (
+                <div>
+                  <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
+                    <CalendarClock className="h-4 w-4 text-primary" /> کلاس‌های امروز
+                  </p>
+                  <ul className="grid gap-2 sm:grid-cols-2">
+                    {d.todayClasses.map((c) => (
+                      <li key={c.period} className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary tabular-nums">
+                          {faNum(c.period)}
+                        </span>
+                        <span className="min-w-0 truncate">
+                          {c.subjectName} — {c.gradeName} «{c.sectionLabel}»
+                          {c.roomName ? <span className="text-xs text-muted-foreground"> · {c.roomName}</span> : null}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {d.attendanceToday && d.attendanceToday.length > 0 ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                  <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-amber-800">
+                    <ClipboardCheck className="h-4 w-4" /> حاضری امروز هنوز قطعی نشده
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {d.attendanceToday.map((s) => (
+                      <Button
+                        key={s.id}
+                        size="sm"
+                        variant="outline"
+                        className="bg-card"
+                        onClick={() => navigate("/attendance")}
+                      >
+                        {s.gradeName} «{s.sectionLabel}» — ثبت حاضری
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {/* Managers: today's attendance overview (Phase 2) */}
+        {d.attendanceOverviewToday ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ClipboardCheck className="h-4 w-4 text-primary" /> حاضری امروز
+              </CardTitle>
+              <CardDescription>وضعیت ثبت حاضری در سراسر مکتب</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 text-center">
+                  <p className="text-2xl font-bold tabular-nums text-emerald-700">{faNum(d.attendanceOverviewToday.submitted)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">قطعی‌شده</p>
+                </div>
+                <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-center">
+                  <p className="text-2xl font-bold tabular-nums text-amber-700">{faNum(d.attendanceOverviewToday.open)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">در انتظار ثبت</p>
+                </div>
+              </div>
+              <Button variant="outline" size="sm" className="w-full" onClick={() => navigate("/attendance")}>
+                رفتن به حاضری <ArrowLeft className="h-4 w-4" />
+              </Button>
             </CardContent>
           </Card>
         ) : null}
@@ -276,8 +381,8 @@ export function DashboardView() {
           <CardContent className="flex items-start gap-3 p-4 text-sm text-muted-foreground">
             <School className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
             <p>
-              ماژول‌های حاضری، امتحانات، فیس و کتابخانه طبق نقشهٔ راه در مراحل بعدی فعال
-              می‌شوند. معلومات پایه (شاگردان، صنف‌ها، شعبه‌ها) از هم‌اکنون ذخیره و حفظ می‌شود.
+              ماژول‌های فیس و کتابخانه طبق نقشهٔ راه در مراحل بعدی فعال می‌شوند. معلومات
+              پایه (شاگردان، صنف‌ها، حاضری و نتایج) از هم‌اکنون ذخیره و حفظ می‌شود.
             </p>
           </CardContent>
         </Card>

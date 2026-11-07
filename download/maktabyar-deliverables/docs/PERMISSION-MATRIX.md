@@ -51,10 +51,21 @@ Legend: `A`=all · `B`=branch · `S`=section · `G`=guardian · `O`=own · ✓=g
 | guardians.manage | A | — | — | B | — | — | — | — | — | — | — | — |
 | academic.view | A | B | B | B | — | — | B | — | — | — | — | A |
 | academic.manage | A | B | B | — | — | — | — | — | — | — | — | — |
+| **staff.view** *(P2)* | A | B | B | — | — | — | — | — | A | — | — | A |
+| **staff.manage** *(P2)* | A | — | — | — | — | — | — | — | A | — | — | — |
+| **timetable.view** *(P2)* | A | B | B | — | — | — | **S** | — | — | — | — | A |
+| **timetable.manage** *(P2)* | A | B | B | — | — | — | — | — | — | — | — | — |
+| **attendance.view** *(P2)* | A | B | B | B | — | — | **S** | — | — | **O** | **G** | A |
+| **attendance.record** *(P2)* | — | — | — | — | — | — | **S** | — | — | — | — | — |
+| **attendance.correct** *(P2)* | — | **B** | **B** | — | — | — | — | — | — | — | — | — |
+| **assessments.view** *(P2)* | A | B | B | — | — | — | **S** | — | — | — | — | A |
+| **assessments.manage** *(P2)* | — | **B** | **B** | — | — | — | — | — | — | — | — | — |
+| **grades.enter** *(P2)* | — | — | B | — | — | — | **S** | — | — | — | — | — |
+| **grades.view** *(P2)* | A | B | B | B | — | — | **S** | — | — | **O** | **G** | A |
 | settings.view | A | A | A | A | A | — | — | — | A | — | — | A |
 | settings.manage | **A only** | — | — | — | — | — | — | — | — | — | — | — |
-| users.view | A | A | — | — | — | — | — | — | A | — | — | A |
-| users.manage | A | — | — | — | — | — | — | — | — | — | — | — |
+| users.view | A | A | — | — | — | — | — | — | **A** | — | — | A |
+| users.manage | A | — | — | — | — | — | — | — | **A** | — | — | — |
 | roles.view | A | A | A | A | — | — | A | — | — | — | — | A |
 | audit.view | A | A | — | — | — | — | — | — | — | — | — | A |
 | notifications.view | O | O | O | O | O | O | O | O | O | O | O | O |
@@ -72,6 +83,26 @@ Legend: `A`=all · `B`=branch · `S`=section · `G`=guardian · `O`=own · ✓=g
 - The last remaining admin cannot demote/deactivate themselves
   (`users.update` guard).
 - Password change revokes all other sessions and issues a fresh one.
+
+## Phase-2 academic-record rules (enforced in code)
+
+- **Grade entry is separated from publishing.** Teachers (`grades.enter`,
+  section scope) enter scores; only `assessments.manage` holders (manager /
+  academic_manager — NOT admin, NOT teacher) publish and lock results.
+- **Teaching contract.** Grade entry is allowed for the assigned teacher via
+  `TeachingAssignment` rows (section+subject+year) even without a section
+  grant — and for branch-scoped academic managers as substitutes.
+- **Published grades are immutable** (`enterGrades` rejects with 400).
+  Corrections arrive in a later phase as approved reversals; the grading
+  policy at publish time is snapshotted on the assessment.
+- **Attendance submit/correct separation.** `attendance.record` (teacher,
+  own sections) opens and submits sessions; only `attendance.correct`
+  (manager/academic_manager) can reopen a submitted session, with a
+  mandatory reason that lands in the audit trail.
+- **Parents/students see grades and attendance only after publishing**
+  (`grades.view` guardian/own scopes; unpublished assessments 403).
+- Finance/cashier/librarian hold NO academic-record permissions at all
+  (E2E-tested).
 
 ## Custom roles
 

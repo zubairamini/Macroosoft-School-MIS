@@ -103,6 +103,14 @@ export function jalaliWeekdayName(iso: string): string {
   return WEEKDAY_NAMES_DARI[map[d.getUTCDay()]];
 }
 
+/** Afghan weekday index for an ISO date: 0=شنبه .. 6=جمعه (Friday).
+ *  Returns -1 never; every date maps to a valid weekday. */
+export function afghanWeekdayIndex(iso: string): number {
+  const d = new Date(`${iso}T00:00:00Z`);
+  const map = [1, 2, 3, 4, 5, 6, 0]; // JS Sunday(0) → Afghan یکشنبه(1), Saturday(6) → شنبه(0)
+  return map[d.getUTCDay()];
+}
+
 /**
  * Parse user input that may be Latin/Persian digits with / - . separators
  * into {jy, jm, jd}. Throws with a Dari message on invalid input.

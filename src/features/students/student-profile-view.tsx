@@ -21,9 +21,9 @@ import {
   User, Phone, MapPin, CalendarDays, Users, FileText, History, ShieldAlert,
   Loader2, AlertTriangle, Lock, CheckCircle2, ArrowLeft, FileCheck2,
 } from "lucide-react";
-import { useStudent, useStudentStatus, useUpdateStudent, useMe, apiErrorMessage } from "@/lib/api/hooks";
+import { useStudent, useStudentStatus, useUpdateStudent, useMe, apiErrorMessage, useAttendanceSummary, useReportCard } from "@/lib/api/hooks";
 import { StatusBadge, Ltr, PageSkeleton, EmptyState, JalaliDateInput } from "@/components/shared";
-import { faNum, formatJalali, formatInstantJalaliDateTime, genderLabel } from "@/lib/format";
+import { faNum, formatJalali, formatInstantJalaliDateTime, genderLabel, faDate, faPercent, assessmentTypeLabel } from "@/lib/format";
 import { navigate } from "@/app-shell/router";
 import { hasGrant } from "@/app-shell/shell";
 
@@ -58,6 +58,8 @@ export function StudentProfileView({ id }: { id: string }) {
   const [editOpen, setEditOpen] = useState(false);
 
   const canUpdate = hasGrant(me, "students.update");
+  const canSeeAttendance = hasGrant(me, "attendance.view");
+  const canSeeGrades = hasGrant(me, "grades.view");
 
   if (isLoading) return <PageSkeleton />;
   if (isError) {
@@ -162,10 +164,9 @@ export function StudentProfileView({ id }: { id: string }) {
           <TabsTrigger value="enrollment">شمولیت</TabsTrigger>
           <TabsTrigger value="guardians">اولیا</TabsTrigger>
           <TabsTrigger value="documents">اسناد</TabsTrigger>
+          {canSeeAttendance ? <TabsTrigger value="attendance">حاضری</TabsTrigger> : null}
+          {canSeeGrades ? <TabsTrigger value="results">نتایج</TabsTrigger> : null}
           <TabsTrigger value="history">تاریخچه</TabsTrigger>
-          <TabsTrigger value="upcoming" disabled title="در مرحلهٔ بعدی فعال می‌شود">
-            حاضری و نمرات
-          </TabsTrigger>
         </TabsList>
 
         {/* Overview */}
@@ -364,6 +365,19 @@ export function StudentProfileView({ id }: { id: string }) {
             </CardContent>
           </Card>
         </TabsContent>
+        {/* Attendance tab (Phase 2) */}
+        {canSeeAttendance ? (
+          <TabsContent value="attendance" className="mt-4">
+            <StudentAttendanceTab studentId={s.id} />
+          </TabsContent>
+        ) : null}
+
+        {/* Results / report card tab (Phase 2) */}
+        {canSeeGrades ? (
+          <TabsContent value="results" className="mt-4">
+            <StudentResultsTab studentId={s.id} />
+          </TabsContent>
+        ) : null}
       </Tabs>
 
       {/* Status-change dialog (deliberate confirmation with reason) */}
@@ -422,6 +436,106 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex items-start justify-between gap-4 border-b border-border/50 pb-2 last:border-0">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
       <dd className="text-end font-medium">{value}</dd>
+    </div>
+  );
+}
+
+// ── Phase 2: attendance & results tabs ───────────────────────────────────
+
+function StudentAttendanceTab({ studentId }: { studentId: string }) {
+  const { data, isLoading, isError, error } = useAttendanceSummary({ studentId });
+  if (isLoading) return <PageSkeleton />;
+  if (isError) {
+    return <EmptyState icon={ShieldAlert} title="مشاهدهٔ حاضری مجاز نیست" body={apiErrorMessage(error)} />;
+  }
+  const s = data?.students[0];
+  if (!s || data.sessions === 0) {
+    return <EmptyState title="حاضری قطعی‌شده‌ای موجود نیست" body="فقط سیشن‌های قطعی‌شدهٔ استاد در آمار محاسبه می‌شود." />;
+  }
+  const cells: Array<[string, number, string]> = [
+    ["حاضر", s.present, "text-emerald-700"],
+    ["غیرحاضر", s.absent, "text-red-700"],
+    ["ناوقت", s.late, "text-amber-700"],
+    ["رخصت", s.excused, "text-sky-700"],
+    ["نا-ثبت", s.notRecorded, "text-muted-foreground"],
+  ];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">خلاصهٔ حاضری</CardTitle>
+        <CardDescription>
+          مجموع {faNum(data.sessions)} سیشن قطعی‌شده — «نا-ثبت» به معنی عدم ثبت است، نه حاضر یا غیرحاضر.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          {cells.map(([label, v, cls]) => (
+            <div key={label} className="rounded-lg border border-border p-3 text-center">
+              <p className={`text-2xl font-bold tabular-nums ${cls}`}>{faNum(v)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{label}</p>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StudentResultsTab({ studentId }: { studentId: string }) {
+  const { data, isLoading, isError, error } = useReportCard(studentId);
+  if (isLoading) return <PageSkeleton />;
+  if (isError) {
+    return <EmptyState icon={ShieldAlert} title="مشاهدهٔ نتایج مجاز نیست" body={apiErrorMessage(error)} />;
+  }
+  if (!data || data.subjects.length === 0) {
+    return <EmptyState title="نتیجهٔ منتشرشده‌ای موجود نیست" body="نتایج فقط بعد از انتشار توسط مدیر تعلیمی قابل مشاهده است." />;
+  }
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">کارت نتیجه — سال {data.academicYearName ?? ""}</CardTitle>
+          <CardDescription>
+            میانگین‌ها بر اساس نمرات منتشرشده؛ نمرات نا-ثبت در میانگین شمرده نمی‌شود (صفر نیست).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {data.subjects.map((sub) => (
+            <div key={sub.subjectId} className="rounded-lg border border-border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-semibold">{sub.subjectName}</p>
+                <p className="text-lg font-bold tabular-nums text-primary">{faPercent(sub.average)}</p>
+              </div>
+              <ul className="mt-2 space-y-1.5">
+                {sub.items.map((it) => (
+                  <li key={it.assessmentId} className="flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-1.5 text-sm">
+                    <span className="text-muted-foreground">
+                      {it.title}
+                      <span className="ms-1.5 text-xs">({assessmentTypeLabel(it.type)})</span>
+                    </span>
+                    <span className="tabular-nums font-medium">
+                      {it.isAbsent ? (
+                        <span className="text-red-700">غیرحاضر در امتحان</span>
+                      ) : it.score !== null ? (
+                        <>{faNum(it.score)} <span className="text-muted-foreground">از {faNum(it.maxScore)}</span></>
+                      ) : (
+                        <span className="text-muted-foreground">نا-ثبت</span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          {data.attendance && data.attendance.sessions > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              حاضری: {faNum(data.attendance.present)} حاضر از {faNum(data.attendance.sessions)} روز قطعی‌شده
+              {data.attendance.absent > 0 ? ` · ${faNum(data.attendance.absent)} غیرحاضر` : ""}
+              {data.attendance.notRecorded > 0 ? ` · ${faNum(data.attendance.notRecorded)} نا-ثبت` : ""}
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
     </div>
   );
 }

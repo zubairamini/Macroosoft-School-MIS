@@ -103,14 +103,73 @@ counters with pre-created records so runtime generation never collides.
   is modelled explicitly (`Branch` vs `ClassSection.label`).
 - Grades 1–12 are ensured idempotently (`ensureGradeLevels`).
 
-## 7. What later phases must preserve (design commitments)
+## 7. Phase 2 — staff, timetable, attendance, exams & grades
 
-- **Attendance (P2):** unrecorded ≠ present; `@@unique` per
-  (session, student) prevents duplicates; holidays/non-enrollment days
-  excluded by construction (enrollment-window joins).
-- **Marks (P2):** missing mark ≠ zero; published results snapshot
-  (marks, policy version, calculation version, approver, timestamp) so
-  later policy changes never silently recalculate history.
+### 7.1 Staff register & teaching contract
+
+- `StaffMember` is the employee register; `userId` optionally links a portal
+  account (one-to-one, unique). HR (`staff.manage`) owns it.
+- `TeachingAssignment` is the binding teaching contract: exactly one teacher
+  per (academic year, class section, subject) — DB `@@unique`. Setting a
+  second teacher on the same slot is a 409 naming the current holder.
+- Terminated staff cannot receive assignments or timetable slots.
+
+### 7.2 Timetable
+
+- `TimetableSlot` (weekday 0=شنبه…6=جمعه, period 1..8; period 0 is reserved
+  for whole-day attendance and rejected here).
+- **Conflict detection** on upsert, backed by DB uniques:
+  `@@unique([classSectionId, weekday, period])` (a section has one lesson per
+  cell) and `@@unique([staffId, weekday, period])` (a teacher is in one place
+  at a time). The API returns 409 with a Dari message naming the clashing
+  teacher, day, period and section.
+- Re-posting an existing cell updates it in place (idempotent, no duplicate
+  rows possible).
+
+### 7.3 Attendance lifecycle
+
+```
+(open) ── save (draft marks, repeatable) ── submit ──▶ submitted (immutable)
+  ▲                                                      │
+  └──────────── reopen (attendance.correct, reason REQUIRED, audited) ◀┘
+```
+
+- At most one session per (section, date, period) — DB `@@unique`; opening
+  the same day twice returns the SAME open session (idempotent makeup path);
+  opening a submitted day is 409 pointing to the correction route.
+- Records exist only for ACTIVE enrollments of that section (400 otherwise).
+- **«نا-ثبت» ≠ حاضر ≠ غیرحاضر:** only SUBMITTED sessions enter statistics,
+  and a student without a record row inside a submitted session is counted
+  as `notRecorded` — never silently present or absent. Per-student counts
+  always conserve to the submitted-session count (E2E-tested).
+- Submitted sessions are immutable; corrections flow through an audited
+  reopen (`attendance.correct`: manager/academic_manager only).
+
+### 7.4 Assessments & grades
+
+```
+grading ── publish (assessments.manage) ──▶ published (locked, policy snapshot)
+```
+
+- Teachers enter grades (`grades.enter`) for their own sections — via a
+  section-scoped grant OR their `TeachingAssignment` rows; academic managers
+  may substitute (branch scope).
+- **Missing grade ≠ zero:** `score IS NULL` rows (and exam-day absence flags)
+  are excluded from every aggregation; a subject with all grades missing has
+  NO average (null), not zero. Weighted average =
+  `Σ(score/maxScore × weight) / Σ(weight)` over non-missing grades.
+- Score > maxScore is rejected (400); score+absence together are rejected.
+- **Publishing is approval:** requires `assessments.manage` (manager /
+  academic_manager — deliberately NOT admin, NOT teacher), needs ≥1 grade,
+  locks the grade table (subsequent writes 400), and snapshots the grading
+  policy in force (`{maxScore, weight, type}`) so published results never
+  re-compute from later edits.
+- Students/parents see grades only after publishing and only their own rows;
+  report cards (`/students/{id}/report-card`) show published items with
+  weighted subject averages plus a submitted-attendance summary.
+
+## 8. What later phases must preserve (design commitments)
+
 - **Fees (P3):** idempotent generation (rerun-safe), decimal money in
   integer minor units, reversal/refund workflows instead of edits,
   idempotency keys against double-click collections, atomic
@@ -118,5 +177,8 @@ counters with pre-created records so runtime generation never collides.
 - **Library (P4):** title vs physical copy; no two active loans of one copy
   (transactional check + unique partial index pattern); charges create
   linked finance transactions.
+- **Grade corrections (P3+):** published results stay immutable; corrections
+  arrive as approved reversal records referencing the original grade, with
+  full policy version history.
 - **Year-end (P5):** repeat-safe promotion batches; academic closing never
   erases debt or closes financial periods.

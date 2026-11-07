@@ -48,21 +48,21 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "sections", label: "شعبه‌های صنف", icon: IdCard, route: "/settings/sections", permission: "academic.view", implemented: true },
       { key: "subjects", label: "مضامین", icon: BookOpen, route: "/settings/subjects", permission: "academic.view", implemented: true },
-      { key: "timetable", label: "برنامهٔ صنفی", icon: ClipboardCheck, route: "/roadmap/timetable", permission: "academic.view", implemented: false, phaseNote: "برنامهٔ صنفی در مرحلهٔ دوم ساخته می‌شود." },
+      { key: "timetable", label: "برنامهٔ صنفی", icon: ClipboardCheck, route: "/timetable", permission: "timetable.view", implemented: true },
     ],
   },
   {
     key: "attendance",
     label: "حاضری",
     items: [
-      { key: "attendance", label: "ثبت حاضری", icon: ClipboardCheck, route: "/roadmap/attendance", permission: "dashboard.view", implemented: false, phaseNote: "ثبت حاضری روزانه و پریودی در مرحلهٔ دوم ساخته می‌شود." },
+      { key: "attendance", label: "ثبت حاضری", icon: ClipboardCheck, route: "/attendance", permission: "attendance.view", implemented: true },
     ],
   },
   {
     key: "exams",
     label: "امتحانات و نتایج",
     items: [
-      { key: "exams", label: "امتحانات", icon: FileSpreadsheet, route: "/roadmap/exams", permission: "dashboard.view", implemented: false, phaseNote: "امتحانات، نمرات و نتایج در مرحلهٔ دوم ساخته می‌شود." },
+      { key: "exams", label: "امتحانات", icon: FileSpreadsheet, route: "/exams", permission: "assessments.view", implemented: true },
     ],
   },
   {
@@ -83,7 +83,8 @@ export const NAV_GROUPS: NavGroup[] = [
     key: "hr",
     label: "منابع بشری",
     items: [
-      { key: "hr", label: "کارمندان", icon: IdCard, route: "/settings/users", permission: "users.view", implemented: true },
+      { key: "staff", label: "کادر مکتب", icon: IdCard, route: "/staff", permission: "staff.view", implemented: true },
+      { key: "hr", label: "حساب‌های کاربری", icon: Users, route: "/settings/users", permission: "users.view", implemented: true },
     ],
   },
   {
@@ -118,9 +119,6 @@ export const NAV_GROUPS: NavGroup[] = [
 ];
 
 export const ROADMAP_INFO: Record<string, { title: string; module: string; detail: string }> = {
-  timetable: { title: "برنامهٔ صنفی", module: "برنامهٔ صنفی (تایم‌تیبل)", detail: "شبکهٔ برنامهٔ صنفی با تشخیص تضاد، نسخهٔ پیش‌نویس و انتشار — طبق نقشهٔ راه در مرحلهٔ دوم ساخته می‌شود." },
-  attendance: { title: "حاضری", module: "حاضری (روزانه و پریودی)", detail: "ثبت سریع حاضر، غیرحاضر، رخصت و ناوقت با تنبیه‌های ارسال‌نشده — طبق نقشهٔ راه در مرحلهٔ دوم ساخته می‌شود." },
-  exams: { title: "امتحانات و نتایج", module: "امتحانات، نمرات و نتایج", detail: "ثبت نمرات، بررسی، تایید و انتشار نتایج با حفظ نسخهٔ سیاست نمره‌دهی — طبق نقشهٔ راه در مرحلهٔ دوم ساخته می‌شود." },
   fees: { title: "فیس و وصولی", module: "فیس، رسید و مصارف", detail: "پلان فیس، ایجاد خودکار صورت‌حساب، وصولی نقدی و رسید چاپی — طبق نقشهٔ راه در مرحلهٔ سوم ساخته می‌شود." },
   library: { title: "کتابخانه", module: "کتابخانه و کتاب‌های درسی", detail: "کاتلاگ، نسخه‌های فیزیکی، امانت و توزیع کتاب درسی با پیوند مالی — طبق نقشهٔ راه در مرحلهٔ چهارم ساخته می‌شود." },
   services: { title: "خدمات مکتب", module: "خدمات مکتب", detail: "ترانسپورت، انبار، ثبت مهمان‌ها و تقویم رویدادها — طبق نقشهٔ راه در مرحلهٔ پنجم ساخته می‌شود." },
