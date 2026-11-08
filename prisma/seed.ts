@@ -255,7 +255,7 @@ async function main() {
   const org = await db.organization.create({
     data: {
       productName: "مکتب‌یار",
-      name: "مکتب خصوصی روشن",
+      name: "مکروسافت مکتب",
       schoolType: "private",
       province: "کابل",
       district: "ناحیهٔ ششم",
@@ -264,7 +264,7 @@ async function main() {
       emisCode: "EMIS-000000",
       registrationNumber: "REG-1405-001",
       reportHeading: "ریاست تعلیم و تربیهٔ ولایت کابل — ادارهٔ تعلیم ناحیهٔ ششم",
-      reportFooter: "مکتب خصوصی روشن — کابل",
+      reportFooter: "مکروسافت مکتب — کابل",
       // The demo ships fully configured; the setup wizard is exercised via
       // tests and is shown again on a fresh database.
       isConfigured: true,

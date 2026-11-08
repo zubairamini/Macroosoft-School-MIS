@@ -4,7 +4,8 @@
 
 "use client";
 
-import { Fragment, useMemo, useState, useEffect } from "react";
+import { Fragment, useMemo, useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,12 +24,11 @@ import {
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { toast } from "sonner";
 import {
-  Bell, ChevronsLeft, ChevronsRight, LogOut, Menu, PanelRightClose, Search,
-  Settings2, UserCog, KeyRound, School, MapPin, Clock, GitBranch,
+  Bell, ChevronsLeft, ChevronsRight, ChevronDown, LogOut, Menu, Search,
+  KeyRound, School, Clock, GitBranch,
 } from "lucide-react";
 import { useMe, useLogout, useOrgContext, useGlobalSearch, useNotifications, useMarkNotificationsRead, useChangePassword } from "@/lib/api/hooks";
 import type { MeResponse } from "@/lib/api/client";
@@ -54,65 +54,253 @@ export function hasGrant(me: MeResponse | undefined, permission: string): boolea
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
+/** Longest-prefix match of the active route across all nav items. */
+function findActiveNav(activeKey: string) {
+  let best: { groupKey: string; itemKey: string; routeLen: number } | null = null;
+  for (const group of NAV_GROUPS) {
+    for (const item of group.items) {
+      if (activeKey.startsWith(item.route) && (!best || item.route.length > best.routeLen)) {
+        best = { groupKey: group.key, itemKey: item.key, routeLen: item.route.length };
+      }
+    }
+  }
+  return best;
+}
+
+interface FlyoutState {
+  groupKey: string;
+  top: number;
+  /** Viewport x of the rail button's LEFT edge (flyout renders to its left). */
+  leftEdge: number;
+}
+
+/**
+ * Compact accordion sidebar: every module group is a main-menu row that expands
+ * to reveal its sub-items. Single-item groups render as direct links. In the
+ * collapsed icon-rail mode, hovering a group opens a portal-rendered flyout with
+ * its submenu (portals escape the scroll container so nothing gets clipped).
+ */
 function SidebarNav({
   collapsed,
   activeKey,
   onNavigate,
+  onExpandRail,
 }: {
   collapsed: boolean;
   activeKey: string;
   onNavigate: (route: string) => void;
+  onExpandRail: () => void;
 }) {
   const can = useCan();
+  const active = useMemo(() => findActiveNav(activeKey), [activeKey]);
+  const [openGroups, setOpenGroups] = useState<string[]>([]);
+  const [flyout, setFlyout] = useState<FlyoutState | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeGroupKey = active?.groupKey;
+
+  // Auto-expand the group containing the active route whenever the active
+  // group changes (setState during render — the sanctioned "derive from a
+  // changing value" pattern; manual collapses are respected until the user
+  // moves to a different module). Starts unsynced so the first render opens
+  // the active group even on a deep-link/reload.
+  const [syncedGroup, setSyncedGroup] = useState<string | undefined>(undefined);
+  if (activeGroupKey && activeGroupKey !== syncedGroup) {
+    setSyncedGroup(activeGroupKey);
+    setOpenGroups((prev) =>
+      prev.includes(activeGroupKey) ? prev : [...prev, activeGroupKey],
+    );
+  }
+
+  function toggleGroup(key: string, open: boolean) {
+    setOpenGroups((prev) =>
+      open ? (prev.includes(key) ? prev : [...prev, key]) : prev.filter((k) => k !== key),
+    );
+  }
+
+  function openFlyout(groupKey: string, li: HTMLLIElement) {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    const r = li.getBoundingClientRect();
+    setFlyout({ groupKey, top: r.top, leftEdge: r.left });
+  }
+
+  function scheduleCloseFlyout() {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setFlyout(null), 140);
+  }
+
+  const flyoutGroup = flyout ? NAV_GROUPS.find((g) => g.key === flyout.groupKey) : null;
+
   return (
-    <nav aria-label="ناوبری اصلی" className="flex-1 overflow-y-auto scroll-area-thin px-2 py-3">
-      {NAV_GROUPS.map((group) => {
-        const visible = group.items.filter((it) => !it.permission || can(it.permission));
-        if (visible.length === 0) return null;
-        return (
-          <div key={group.key} className="mb-3">
-            {!collapsed ? (
-              <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
-                {group.label}
+    <nav aria-label="ناوبری اصلی" className="flex-1 overflow-y-auto scroll-area-thin px-1.5 py-2">
+      <ul className="space-y-0.5">
+        {NAV_GROUPS.map((group) => {
+          const visible = group.items.filter((it) => !it.permission || can(it.permission));
+          if (visible.length === 0) return null;
+
+          const isOpen = openGroups.includes(group.key);
+          const groupActive = active?.groupKey === group.key;
+          const single = visible.length === 1 ? visible[0] : null;
+          const GroupIcon = group.icon;
+
+          // ── Collapsed icon rail: flyout submenu on hover ──
+          if (collapsed) {
+            return (
+              <li
+                key={group.key}
+                className="relative"
+                onMouseEnter={(e) => !single && openFlyout(group.key, e.currentTarget)}
+                onMouseLeave={scheduleCloseFlyout}
+              >
+                <button
+                  onClick={() => {
+                    if (single) onNavigate(single.route);
+                    else {
+                      setFlyout(null);
+                      toggleGroup(group.key, true);
+                      onExpandRail();
+                    }
+                  }}
+                  title={group.label}
+                  aria-current={groupActive ? "page" : undefined}
+                  className={`transition-soft mx-auto flex h-9 w-9 items-center justify-center rounded-lg ${
+                    groupActive
+                      ? "bg-primary/10 text-primary shadow-sm shadow-primary/10"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  <GroupIcon className="h-[18px] w-[18px]" strokeWidth={2} />
+                </button>
+              </li>
+            );
+          }
+
+          // ── Single-item group: direct link ──
+          if (single) {
+            const itemActive = active?.itemKey === single.key;
+            return (
+              <li key={group.key}>
+                <button
+                  onClick={() => onNavigate(single.route)}
+                  aria-current={itemActive ? "page" : undefined}
+                  className={`transition-soft flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] ${
+                    itemActive
+                      ? "bg-primary/10 font-bold text-primary"
+                      : "text-foreground/75 hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  <GroupIcon className="h-[17px] w-[17px] shrink-0" strokeWidth={2} />
+                  <span className="truncate">{single.label}</span>
+                </button>
+              </li>
+            );
+          }
+
+          // ── Main menu with submenu (accordion) ──
+          return (
+            <li key={group.key}>
+              <Collapsible open={isOpen} onOpenChange={(o) => toggleGroup(group.key, o)}>
+                <CollapsibleTrigger asChild>
+                  <button
+                    className={`transition-soft flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] ${
+                      groupActive
+                        ? "bg-primary/[0.08] font-bold text-primary"
+                        : isOpen
+                          ? "font-semibold text-foreground hover:bg-muted"
+                          : "text-foreground/75 hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <GroupIcon className="h-[17px] w-[17px] shrink-0" strokeWidth={2} />
+                    <span className="min-w-0 flex-1 truncate text-start">{group.label}</span>
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-transform duration-200 ${
+                        isOpen ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+                  <ul className="my-1 ms-[17px] me-0.5 space-y-px border-s border-border/80 ps-1.5">
+                    {visible.map((item) => {
+                      const itemActive = active?.itemKey === item.key;
+                      return (
+                        <li key={item.key}>
+                          <button
+                            onClick={() => onNavigate(item.route)}
+                            aria-current={itemActive ? "page" : undefined}
+                            className={`transition-soft flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-[12.5px] ${
+                              itemActive
+                                ? "bg-primary/10 font-bold text-primary"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                            }`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 shrink-0 rounded-full transition-soft ${
+                                itemActive ? "bg-primary" : "bg-border"
+                              }`}
+                            />
+                            <span className="truncate">{item.label}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </CollapsibleContent>
+              </Collapsible>
+            </li>
+          );
+        })}
+      </ul>
+
+      {/* Icon-rail flyout submenu (portal → never clipped by the scroll area). */}
+      {flyout && flyoutGroup
+        ? createPortal(
+            <div
+              dir="rtl"
+              className="fixed z-[70] w-56 rounded-xl border border-border bg-popover p-1.5 shadow-2xl shadow-emerald-950/15"
+              style={{
+                top: Math.min(flyout.top, Math.max(12, window.innerHeight - 260)),
+                left: flyout.leftEdge - 10,
+                transform: "translateX(-100%)",
+              }}
+              onMouseEnter={() => closeTimer.current && clearTimeout(closeTimer.current)}
+              onMouseLeave={scheduleCloseFlyout}
+            >
+              <p className="px-2 pb-1 pt-0.5 text-[11px] font-bold text-foreground/70">
+                {flyoutGroup.label}
               </p>
-            ) : (
-              <Separator className="mx-2 my-2" />
-            )}
-            <ul className="space-y-0.5">
-              {visible.map((item) => {
-                const Icon = item.icon;
-                const active = activeKey.startsWith(item.route);
-                return (
-                  <li key={item.key}>
-                    <button
-                      onClick={() => onNavigate(item.route)}
-                      title={collapsed ? item.label : undefined}
-                      aria-current={active ? "page" : undefined}
-                      className={`transition-soft flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-sm ${
-                        active
-                          ? "border-primary/30 bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
-                          : "border-transparent text-sidebar-foreground hover:bg-muted"
-                      } ${collapsed ? "justify-center" : ""}`}
-                    >
-                      <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={2} />
-                      {!collapsed ? (
-                        <span className="flex min-w-0 flex-1 items-center justify-between gap-1">
+              <ul className="space-y-0.5">
+                {flyoutGroup.items
+                  .filter((it) => !it.permission || can(it.permission))
+                  .map((item) => {
+                    const itemActive = active?.itemKey === item.key;
+                    return (
+                      <li key={item.key}>
+                        <button
+                          onClick={() => {
+                            onNavigate(item.route);
+                            setFlyout(null);
+                          }}
+                          className={`transition-soft flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs ${
+                            itemActive
+                              ? "bg-primary/10 font-bold text-primary"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          }`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                              itemActive ? "bg-primary" : "bg-border"
+                            }`}
+                          />
                           <span className="truncate">{item.label}</span>
-                          {!item.implemented ? (
-                            <Badge variant="outline" className="shrink-0 border-amber-200 bg-amber-50 px-1 py-0 text-[10px] text-amber-700">
-                              بعدی
-                            </Badge>
-                          ) : null}
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        );
-      })}
+                        </button>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </div>,
+            document.body,
+          )
+        : null}
     </nav>
   );
 }
@@ -476,14 +664,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   const sidebarContent = (
     <>
-      <div className={`flex items-center gap-2.5 border-b border-sidebar-border px-3 py-3 ${collapsed ? "justify-center" : ""}`}>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <School className="h-5 w-5" />
+      <div
+        className={`flex items-center gap-2.5 border-b border-sidebar-border px-2.5 py-2.5 ${
+          collapsed ? "justify-center" : ""
+        }`}
+      >
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-600 to-teal-700 text-primary-foreground shadow-sm shadow-emerald-700/25">
+          <School className="h-[18px] w-[18px]" strokeWidth={2} />
         </div>
         {!collapsed ? (
           <div className="min-w-0">
-            <p className="truncate text-sm font-bold leading-tight text-foreground">
-              {orgCtx?.org?.name || "مکتب‌یار"}
+            <p className="truncate text-[13px] font-bold leading-tight text-foreground">
+              {orgCtx?.org?.name || "مکروسافت مکتب"}
             </p>
             <p className="truncate text-[11px] text-muted-foreground">
               {orgCtx?.org?.productName || "نظام مدیریت مکتب"}
@@ -498,14 +690,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
           navigate(r);
           setMobileOpen(false);
         }}
+        onExpandRail={() => setCollapsed(false)}
       />
-      <div className="border-t border-sidebar-border p-2">
+      <div className="border-t border-sidebar-border p-1.5">
         <Button
           variant="ghost"
           size="sm"
-          className={`transition-soft w-full justify-start gap-2 text-muted-foreground ${collapsed ? "justify-center px-0" : ""}`}
+          className={`transition-soft w-full gap-2 text-muted-foreground ${
+            collapsed ? "justify-center px-0" : "justify-start"
+          }`}
           onClick={() => setCollapsed((c) => !c)}
           aria-label={collapsed ? "باز کردن نوار کناری" : "بستن نوار کناری"}
+          title={collapsed ? "باز کردن نوار کناری" : "بستن نوار کناری"}
         >
           {collapsed ? <ChevronsLeft className="h-4 w-4" /> : <ChevronsRight className="h-4 w-4" />}
           {!collapsed ? "جمع کردن نوار" : null}
@@ -516,10 +712,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Desktop sidebar — right side in RTL */}
+      {/* Desktop sidebar — right side in RTL, compact rail when collapsed */}
       <aside
         className={`sticky top-0 hidden h-screen shrink-0 flex-col border-e border-sidebar-border bg-sidebar lg:flex ${
-          collapsed ? "w-16" : "w-64"
+          collapsed ? "w-14" : "w-56"
         } transition-[width] duration-200`}
       >
         {sidebarContent}

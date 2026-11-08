@@ -175,6 +175,65 @@
   border-radius: 3px;
 }
 
+/* ── Login screen motion (prefers-reduced-motion honored globally above) ── */
+
+@keyframes login-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+@keyframes login-drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-36px, 26px) scale(1.1); }
+}
+@keyframes login-drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(30px, -22px) scale(0.92); }
+}
+@keyframes login-shine {
+  0% { transform: translateX(-180%) skewX(-18deg); }
+  60%, 100% { transform: translateX(320%) skewX(-18deg); }
+}
+@keyframes login-fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes login-pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgb(4 120 87 / 0.35); }
+  70% { box-shadow: 0 0 0 14px rgb(4 120 87 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(4 120 87 / 0); }
+}
+@keyframes login-grid-pan {
+  from { background-position: 0 0; }
+  to { background-position: 40px 40px; }
+}
+
+.login-float { animation: login-float 7s ease-in-out infinite; }
+.login-drift-a { animation: login-drift-a 16s ease-in-out infinite; }
+.login-drift-b { animation: login-drift-b 22s ease-in-out infinite; }
+.login-fade-up { animation: login-fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.login-pulse-ring { animation: login-pulse-ring 2.6s ease-out infinite; }
+
+/* Gradient sweep across the primary submit button. */
+.btn-shine { position: relative; overflow: hidden; }
+.btn-shine::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inline-size: 38%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.4), transparent);
+  transform: translateX(-180%) skewX(-18deg);
+  animation: login-shine 3.4s ease-in-out infinite;
+}
+
+/* Faint blueprint grid drifting on the dark brand panel. */
+.login-grid {
+  background-image:
+    linear-gradient(to left, rgb(255 255 255 / 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  animation: login-grid-pan 9s linear infinite;
+}
+
 
 /* ── Print sheets (Phase 4/5: ID cards, reports) ──────────────────────────
    When the browser print dialog runs, everything outside the marked print

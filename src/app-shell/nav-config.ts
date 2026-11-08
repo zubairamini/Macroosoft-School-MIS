@@ -6,7 +6,7 @@ import {
   LayoutDashboard, GraduationCap, Users, BookOpen, ClipboardCheck,
   FileSpreadsheet, Wallet, Library, IdCard, Megaphone, BarChart3, Settings,
   ReceiptText, Coins, Landmark, BadgeDollarSign, Home, Printer,
-  ShieldAlert, TrendingUp, Building2,
+  ShieldAlert, TrendingUp, Building2, ConciergeBell, MessagesSquare,
   type LucideIcon,
 } from "lucide-react";
 
@@ -25,6 +25,8 @@ export interface NavItem {
 export interface NavGroup {
   key: string;
   label: string;
+  /** Icon shown on the collapsible main-menu row. */
+  icon: LucideIcon;
   items: NavItem[];
 }
 
@@ -32,6 +34,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "home",
     label: "صفحهٔ اصلی",
+    icon: LayoutDashboard,
     items: [
       { key: "dashboard", label: "داشبورد", icon: LayoutDashboard, route: "/dashboard", permission: "dashboard.view", implemented: true },
     ],
@@ -39,6 +42,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "students",
     label: "شاگردان و شمولیت",
+    icon: GraduationCap,
     items: [
       { key: "students", label: "شاگردان", icon: Users, route: "/students", permission: "students.view", implemented: true },
       { key: "admissions", label: "شمولیت‌ها", icon: GraduationCap, route: "/admissions", permission: "applications.view", implemented: true },
@@ -47,6 +51,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "academic",
     label: "امور تعلیمی",
+    icon: BookOpen,
     items: [
       { key: "sections", label: "شعبه‌های صنف", icon: IdCard, route: "/settings/sections", permission: "academic.view", implemented: true },
       { key: "subjects", label: "مضامین", icon: BookOpen, route: "/settings/subjects", permission: "academic.view", implemented: true },
@@ -56,6 +61,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "attendance",
     label: "حاضری و انضباط",
+    icon: ClipboardCheck,
     items: [
       { key: "attendance", label: "ثبت حاضری", icon: ClipboardCheck, route: "/attendance", permission: "attendance.view", implemented: true },
       { key: "discipline", label: "انضباط و رفتار", icon: ShieldAlert, route: "/discipline", permission: "discipline.view", implemented: true, phaseNote: "مرحلهٔ ۷" },
@@ -64,6 +70,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "exams",
     label: "امتحانات و نتایج",
+    icon: FileSpreadsheet,
     items: [
       { key: "exams", label: "امتحانات", icon: FileSpreadsheet, route: "/exams", permission: "assessments.view", implemented: true },
     ],
@@ -71,6 +78,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "finance",
     label: "امور مالی",
+    icon: Wallet,
     items: [
       { key: "fees", label: "فیس‌ها و تخفیف‌ها", icon: Wallet, route: "/finance/fees", permission: "fees.view", implemented: true },
       { key: "invoices", label: "فاکتورها", icon: ReceiptText, route: "/finance/invoices", permission: "invoices.view", implemented: true },
@@ -83,6 +91,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "library",
     label: "کتاب‌ها و کتابخانه",
+    icon: Library,
     items: [
       { key: "library", label: "کتابخانه", icon: Library, route: "/library", permission: "library.view", implemented: true },
     ],
@@ -90,6 +99,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "hr",
     label: "منابع بشری",
+    icon: Users,
     items: [
       { key: "staff", label: "کادر مکتب", icon: IdCard, route: "/staff", permission: "staff.view", implemented: true },
       { key: "hr", label: "حساب‌های کاربری", icon: Users, route: "/settings/users", permission: "users.view", implemented: true },
@@ -98,6 +108,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "services",
     label: "خدمات مکتب",
+    icon: ConciergeBell,
     items: [
       { key: "services", label: "خدمات", icon: Megaphone, route: "/services", permission: "services.view", implemented: true },
     ],
@@ -105,6 +116,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "communications",
     label: "ارتباطات",
+    icon: MessagesSquare,
     items: [
       { key: "announcements", label: "اعلانات", icon: Megaphone, route: "/announcements", permission: "announcements.view", implemented: true },
     ],
@@ -112,6 +124,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "portal",
     label: "پورتال‌ها",
+    icon: Home,
     items: [
       { key: "portal", label: "پورتال اولیا/شاگرد", icon: Home, route: "/portal", permission: "dashboard.view", implemented: true },
     ],
@@ -119,6 +132,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "reports",
     label: "گزارش‌ها",
+    icon: BarChart3,
     items: [
       { key: "analytics", label: "تحلیل‌ها", icon: TrendingUp, route: "/analytics", permission: "analytics.view", implemented: true, phaseNote: "مرحلهٔ ۸" },
       { key: "reports", label: "گزارش‌ها", icon: BarChart3, route: "/reports", permission: "reports.view", implemented: true },
@@ -128,6 +142,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "settings",
     label: "تنظیمات",
+    icon: Settings,
     items: [
       { key: "settings", label: "تنظیمات مکتب", icon: Settings, route: "/settings", permission: "settings.view", implemented: true },
       { key: "branches", label: "شعبه‌های مکتب", icon: Building2, route: "/settings/branches", permission: "academic.view", implemented: true, phaseNote: "مرحلهٔ ۶" },
